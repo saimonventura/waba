@@ -5,6 +5,9 @@ import type {
   BusinessProfile, PhoneInfo,
 } from "./types.js"
 import { WhatsAppError } from "./errors.js"
+import { verifyWebhook, parseWebhook } from "./webhook.js"
+import type { VerifyQuery } from "./webhook.js"
+import type { WebhookEvent } from "./types.js"
 
 const DEFAULT_API_VERSION = "v22.0"
 const GRAPH_URL = "https://graph.facebook.com"
@@ -344,5 +347,15 @@ export class WhatsApp {
     return this.request(`${this.phoneNumberId}/verify_code`, {
       body: { code },
     })
+  }
+
+  // ── Webhook (Static) ──────────────────────────────────────────────────
+
+  static verifyWebhook(query: VerifyQuery, verifyToken: string): string {
+    return verifyWebhook(query, verifyToken)
+  }
+
+  static parseWebhook(body: unknown): WebhookEvent[] {
+    return parseWebhook(body)
   }
 }

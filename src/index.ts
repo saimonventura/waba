@@ -1,2 +1,5 @@
-export * from "./types.js"
 export { WhatsApp } from "./client.js"
+export { WhatsAppError } from "./errors.js"
+export { verifyWebhook, parseWebhook } from "./webhook.js"
+export type { VerifyQuery } from "./webhook.js"
+export * from "./types.js"
