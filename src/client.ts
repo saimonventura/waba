@@ -1,6 +1,8 @@
 import type {
   WhatsAppConfig, MediaSource, SendMessageOptions, SendMessageResult,
   InteractiveOptions, Button, ListSection, CTAAction, LocationData, ContactData,
+  TemplateComponent, TemplateCreateRequest, MediaUploadResult, MediaUrlResult,
+  BusinessProfile, PhoneInfo,
 } from "./types.js"
 import { WhatsAppError } from "./errors.js"
 
@@ -232,5 +234,115 @@ export class WhatsApp {
     }
     if (body) interactive.body = { text: body }
     return this.sendMessage(to, "interactive", { interactive })
+  }
+
+  // ── Templates ──
+
+  async sendTemplate(to: string, name: string, languageCode: string, components?: TemplateComponent[]): Promise<SendMessageResult> {
+    const template: any = {
+      name,
+      language: { code: languageCode },
+    }
+    if (components) template.components = components
+    return this.sendMessage(to, "template", { template })
+  }
+
+  async listTemplates(filters?: { status?: string; category?: string }): Promise<any> {
+    if (!this.wabaId) throw new Error("wabaId is required for template management")
+    let path = `${this.wabaId}/message_templates`
+    const params = new URLSearchParams()
+    if (filters?.status) params.set("status", filters.status)
+    if (filters?.category) params.set("category", filters.category)
+    const qs = params.toString()
+    if (qs) path += `?${qs}`
+    return this.request(path, { method: "GET" })
+  }
+
+  async createTemplate(template: TemplateCreateRequest): Promise<any> {
+    if (!this.wabaId) throw new Error("wabaId is required for template management")
+    return this.request(`${this.wabaId}/message_templates`, { body: template })
+  }
+
+  async deleteTemplate(name: string): Promise<any> {
+    if (!this.wabaId) throw new Error("wabaId is required for template management")
+    return this.request(`${this.wabaId}/message_templates?name=${encodeURIComponent(name)}`, { method: "DELETE" })
+  }
+
+  // ── Media Management ──
+
+  async uploadMedia(file: Uint8Array | Blob, mimeType: string): Promise<MediaUploadResult> {
+    const form = new FormData()
+    const blob = file instanceof Blob ? file : new Blob([file as BlobPart], { type: mimeType })
+    form.append("file", blob, "file")
+    form.append("messaging_product", "whatsapp")
+    form.append("type", mimeType)
+    return this.request<MediaUploadResult>(`${this.phoneNumberId}/media`, { body: form })
+  }
+
+  async getMediaUrl(mediaId: string): Promise<MediaUrlResult> {
+    return this.request<MediaUrlResult>(mediaId, { method: "GET" })
+  }
+
+  async downloadMedia(url: string): Promise<Uint8Array> {
+    const response = await fetch(url, {
+      headers: { "Authorization": `Bearer ${this.accessToken}` },
+    })
+    if (!response.ok) {
+      throw new WhatsAppError({
+        message: `Media download failed: ${response.status}`,
+        code: response.status,
+        title: "Media download error",
+        httpStatus: response.status,
+      })
+    }
+    const arrayBuffer = await response.arrayBuffer()
+    return new Uint8Array(arrayBuffer)
+  }
+
+  async deleteMedia(mediaId: string): Promise<any> {
+    return this.request(mediaId, { method: "DELETE" })
+  }
+
+  // ── Business Profile ──
+
+  async getBusinessProfile(fields?: string[]): Promise<BusinessProfile> {
+    const allFields = fields || ["about", "address", "description", "email", "websites", "vertical", "profile_picture_url"]
+    const path = `${this.phoneNumberId}/whatsapp_business_profile?fields=${allFields.join(",")}`
+    const result = await this.request<{ data: BusinessProfile[] }>(path, { method: "GET" })
+    return result.data?.[0] || {}
+  }
+
+  async updateBusinessProfile(data: Partial<BusinessProfile>): Promise<any> {
+    return this.request(`${this.phoneNumberId}/whatsapp_business_profile`, {
+      body: { messaging_product: "whatsapp", ...data },
+    })
+  }
+
+  // ── Phone Number Management ──
+
+  async getPhoneInfo(): Promise<PhoneInfo> {
+    return this.request<PhoneInfo>(this.phoneNumberId, { method: "GET" })
+  }
+
+  async registerPhone(pin: string): Promise<any> {
+    return this.request(`${this.phoneNumberId}/register`, {
+      body: { messaging_product: "whatsapp", pin },
+    })
+  }
+
+  async deregisterPhone(): Promise<any> {
+    return this.request(`${this.phoneNumberId}/deregister`, { body: { messaging_product: "whatsapp" } })
+  }
+
+  async requestVerificationCode(method: "SMS" | "VOICE"): Promise<any> {
+    return this.request(`${this.phoneNumberId}/request_code`, {
+      body: { code_method: method },
+    })
+  }
+
+  async verifyCode(code: string): Promise<any> {
+    return this.request(`${this.phoneNumberId}/verify_code`, {
+      body: { code },
+    })
   }
 }
