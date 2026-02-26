@@ -1,2 +1,1 @@
-// @saimonventura/waba — WhatsApp Cloud API SDK
-export {}
+export * from "./types.js"
