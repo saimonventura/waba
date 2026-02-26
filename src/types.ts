@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// @saimonventura/waba — WhatsApp Cloud API v22.0 Types
+// @saimonventura/waba — WhatsApp Cloud API v25.0 Types
 // Types-only file. No runtime code.
 // ---------------------------------------------------------------------------
 

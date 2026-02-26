@@ -4,7 +4,7 @@ import { WhatsApp } from "../src/client.js"
 const PHONE_ID = "123456789"
 const TOKEN = "test-token"
 const WABA_ID = "WABA_123"
-const API_VERSION = "v22.0"
+const API_VERSION = "v25.0"
 const BASE_URL = `https://graph.facebook.com/${API_VERSION}`
 
 function createClient() {

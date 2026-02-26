@@ -9,7 +9,7 @@ import { verifyWebhook, parseWebhook } from "./webhook.js"
 import type { VerifyQuery } from "./webhook.js"
 import type { WebhookEvent } from "./types.js"
 
-const DEFAULT_API_VERSION = "v22.0"
+const DEFAULT_API_VERSION = "v25.0"
 const GRAPH_URL = "https://graph.facebook.com"
 
 export class WhatsApp {
