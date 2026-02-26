@@ -1,0 +1,27 @@
+{
+  "name": "@saimonventura/waba",
+  "version": "0.1.0",
+  "description": "WhatsApp Cloud API SDK — zero dependencies, full coverage",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "tsc"
+  },
+  "engines": { "node": ">=18.0.0" },
+  "private": true,
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
