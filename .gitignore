@@ -4,4 +4,5 @@ dist/
 .env
 smoke-test.ts
 .claude/
+CLAUDE.md
 docs/plans/
