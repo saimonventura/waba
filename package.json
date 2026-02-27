@@ -1,0 +1,54 @@
+{
+  "name": "@saimonventura/waba",
+  "version": "0.0.1",
+  "description": "WhatsApp Cloud API v25.0 SDK — zero dependencies, full coverage, TypeScript-first",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "tsc"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "whatsapp",
+    "cloud-api",
+    "sdk",
+    "typescript",
+    "meta",
+    "waba",
+    "whatsapp-business",
+    "messaging"
+  ],
+  "author": "Saimon Marcolino Ventura",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saimonventura/waba.git"
+  },
+  "homepage": "https://github.com/saimonventura/waba#readme",
+  "bugs": {
+    "url": "https://github.com/saimonventura/waba/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.2",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

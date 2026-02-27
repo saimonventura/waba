@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.tgz
+.env
+smoke-test.ts
+.claude/
+docs/plans/
