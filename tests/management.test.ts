@@ -324,4 +324,69 @@ describe("Analytics", () => {
     const client = createClientNoWaba()
     await expect(client.getAnalytics(0, 1)).rejects.toThrow("wabaId is required")
   })
+
+  it("should get template performance metrics", async () => {
+    const mock = mockFetch({ data: [] })
+    const client = createClient()
+    await client.getTemplatePerformance()
+    expect(parseFetchUrl(mock)).toBe(`${BASE_URL}/${WABA_ID}/template_performance_metrics`)
+    expect(mock.mock.calls[0][1].method).toBe("GET")
+  })
+
+  it("should get pricing analytics", async () => {
+    const mock = mockFetch({ data: [] })
+    const client = createClient()
+    await client.getPricingAnalytics(1700000000, 1700100000)
+    const url = parseFetchUrl(mock)
+    expect(url).toContain("fields=pricing_analytics.start(1700000000).end(1700100000).granularity(DAY)")
+  })
+
+  it("should get call analytics", async () => {
+    const mock = mockFetch({ data: [] })
+    const client = createClient()
+    await client.getCallAnalytics(1700000000, 1700100000, "MONTH")
+    const url = parseFetchUrl(mock)
+    expect(url).toContain("fields=call_analytics.start(1700000000).end(1700100000).granularity(MONTH)")
+  })
+
+  it("should throw on pricing analytics without wabaId", async () => {
+    const client = createClientNoWaba()
+    await expect(client.getPricingAnalytics(0, 1)).rejects.toThrow("wabaId is required")
+  })
+})
+
+describe("Resumable Upload", () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+
+  it("should initiate upload session and upload file", async () => {
+    const sessionResponse = { id: "upload_session_123" }
+    const uploadResponse = { h: "media_handle_456" }
+
+    // Mock two sequential fetch calls
+    let callCount = 0
+    const mock = vi.fn().mockImplementation(() => {
+      callCount++
+      const body = callCount === 1 ? sessionResponse : uploadResponse
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        headers: new Headers({ "content-type": "application/json" }),
+      })
+    })
+    globalThis.fetch = mock
+
+    const client = createClient()
+    const file = new Uint8Array([1, 2, 3, 4])
+    const result = await client.uploadMediaResumable("APP_123", 4, "image/jpeg", file)
+
+    expect(result.id).toBe("media_handle_456")
+    expect(mock).toHaveBeenCalledTimes(2)
+
+    // First call: create session
+    expect(mock.mock.calls[0][0]).toContain("APP_123/uploads")
+
+    // Second call: upload data
+    expect(mock.mock.calls[1][0]).toContain("upload_session_123")
+  })
 })

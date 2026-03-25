@@ -1,13 +1,15 @@
 import type {
   WhatsAppConfig, MediaSource, SendMessageOptions, SendMessageResult,
   InteractiveOptions, Button, ListSection, CTAAction, LocationData, ContactData,
-  TemplateComponent, TemplateCreateRequest, MediaUploadResult, MediaUrlResult,
+  TemplateComponent, TemplateCreateRequest, TemplateUpdateRequest, MediaUploadResult, MediaUrlResult,
   BusinessProfile, PhoneInfo, ProductSection, AddressMessageOptions, FlowAction,
   CommerceSettings, HealthStatusResponse, PhoneNumberEntry, QRCode, FlowInfo,
-  BroadcastResult,
+  BroadcastResult, OrderDetailsAction, OrderDetailsOptions, OrderStatusAction, OrderStatusOptions,
+  StandardTemplateComponent, CarouselCardInput, TemplateParameter,
 } from "./types.js"
 import { WhatsAppError } from "./errors.js"
 import { verifyWebhook, parseWebhook, validateSignature, parseWebhookWithSignature } from "./webhook.js"
+import { validateText, validateButtons, validateList, validateCTA, validateInteractiveBody, validateHeaderFooter } from "./validate.js"
 import type { VerifyQuery } from "./webhook.js"
 import type { WebhookEvent } from "./types.js"
 
@@ -19,12 +21,14 @@ export class WhatsApp {
   private readonly accessToken: string
   private readonly apiVersion: string
   readonly wabaId?: string
+  private readonly validate: boolean
 
   constructor(config: WhatsAppConfig) {
     this.phoneNumberId = config.phoneNumberId
     this.accessToken = config.accessToken
     this.apiVersion = config.apiVersion || DEFAULT_API_VERSION
     this.wabaId = config.wabaId
+    this.validate = config.validate ?? false
   }
 
   // ── Private: Base HTTP ──
@@ -93,6 +97,7 @@ export class WhatsApp {
   // ── Messaging: Text ──
 
   async sendText(to: string, body: string, options?: SendMessageOptions): Promise<SendMessageResult> {
+    if (this.validate) validateText(body)
     return this.sendMessage(to, "text", {
       text: { preview_url: options?.previewUrl ?? false, body },
     }, options)
@@ -177,6 +182,7 @@ export class WhatsApp {
   // ── Interactive: Buttons ──
 
   async sendButtons(to: string, body: string, buttons: Button[], options?: InteractiveOptions): Promise<SendMessageResult> {
+    if (this.validate) validateButtons(buttons, body, options?.header, options?.footer)
     const interactive: any = {
       type: "button",
       body: { text: body },
@@ -195,6 +201,7 @@ export class WhatsApp {
   // ── Interactive: List ──
 
   async sendList(to: string, body: string, buttonText: string, sections: ListSection[], options?: InteractiveOptions): Promise<SendMessageResult> {
+    if (this.validate) validateList(sections, body, options?.header, options?.footer)
     const interactive: any = {
       type: "list",
       body: { text: body },
@@ -211,6 +218,7 @@ export class WhatsApp {
   // ── Interactive: CTA URL ──
 
   async sendCTA(to: string, body: string, cta: CTAAction, options?: InteractiveOptions): Promise<SendMessageResult> {
+    if (this.validate) { validateCTA(cta.text, cta.url); validateInteractiveBody(body); validateHeaderFooter(options?.header, options?.footer) }
     const interactive: any = {
       type: "cta_url",
       body: { text: body },
@@ -349,6 +357,61 @@ export class WhatsApp {
     return this.sendMessage(to, "interactive", { interactive })
   }
 
+  // ── Interactive: Order Details (Payment) ──
+
+  async sendOrderDetails(to: string, body: string, order: OrderDetailsAction, options?: OrderDetailsOptions): Promise<SendMessageResult> {
+    const interactive: any = {
+      type: "order_details",
+      body: { text: body },
+      action: {
+        name: "review_and_pay",
+        parameters: {
+          reference_id: order.referenceId,
+          type: order.type || "digital-goods",
+          payment_type: order.paymentType,
+          payment_configuration: order.paymentConfiguration,
+          currency: order.currency,
+          total_amount: order.totalAmount,
+          order: {
+            status: order.order.status,
+            items: order.order.items,
+            subtotal: order.order.subtotal,
+            ...(order.order.catalog_id && { catalog_id: order.order.catalog_id }),
+            ...(order.order.tax && { tax: order.order.tax }),
+            ...(order.order.shipping && { shipping: order.order.shipping }),
+            ...(order.order.discount && { discount: order.order.discount }),
+            ...(order.order.expiration && { expiration: order.order.expiration }),
+          },
+        },
+      },
+    }
+    if (options?.header) interactive.header = { type: "text", text: options.header }
+    if (options?.footer) interactive.footer = { text: options.footer }
+    return this.sendMessage(to, "interactive", { interactive })
+  }
+
+  // ── Interactive: Order Status ──
+
+  async sendOrderStatus(to: string, body: string, status: OrderStatusAction, options?: OrderStatusOptions): Promise<SendMessageResult> {
+    const interactive: any = {
+      type: "order_status",
+      body: { text: body },
+      action: {
+        name: "review_order",
+        parameters: {
+          reference_id: status.referenceId,
+          order: {
+            status: status.order.status,
+            ...(status.order.description && { description: status.order.description }),
+          },
+        },
+      },
+    }
+    if (options?.header) interactive.header = { type: "text", text: options.header }
+    if (options?.footer) interactive.footer = { text: options.footer }
+    return this.sendMessage(to, "interactive", { interactive })
+  }
+
   // ── Typing Indicator ──
 
   async sendTypingIndicator(messageId: string): Promise<any> {
@@ -394,6 +457,89 @@ export class WhatsApp {
     return this.request(`${this.wabaId}/message_templates?name=${encodeURIComponent(name)}`, { method: "DELETE" })
   }
 
+  async getTemplate(templateId: string): Promise<any> {
+    return this.request(templateId, { method: "GET" })
+  }
+
+  async updateTemplate(templateId: string, data: TemplateUpdateRequest): Promise<any> {
+    return this.request(templateId, { body: data })
+  }
+
+  // ── Template Convenience: Carousel ──
+
+  async sendCarouselTemplate(
+    to: string,
+    name: string,
+    languageCode: string,
+    bodyParams: TemplateParameter[],
+    cards: CarouselCardInput[],
+  ): Promise<SendMessageResult> {
+    const components: TemplateComponent[] = [
+      { type: "body", parameters: bodyParams } as StandardTemplateComponent,
+      {
+        type: "carousel",
+        cards: cards.map((card, i) => {
+          const cardComponents: StandardTemplateComponent[] = []
+          const headerType = card.headerType || "image"
+          const headerParam: TemplateParameter = headerType === "video"
+            ? { type: "video", video: card.header }
+            : { type: "image", image: card.header }
+          cardComponents.push({ type: "header", parameters: [headerParam] })
+          if (card.bodyParams) {
+            cardComponents.push({ type: "body", parameters: card.bodyParams })
+          }
+          if (card.buttons) {
+            for (const btn of card.buttons) {
+              cardComponents.push({ type: "button", sub_type: btn.sub_type, index: btn.index, parameters: btn.parameters })
+            }
+          }
+          return { card_index: i, components: cardComponents }
+        }),
+      },
+    ]
+    return this.sendTemplate(to, name, languageCode, components)
+  }
+
+  // ── Template Convenience: Auth OTP ──
+
+  async sendAuthTemplate(
+    to: string,
+    name: string,
+    languageCode: string,
+    otp: string,
+    buttonType: "url" | "copy_code" = "url",
+  ): Promise<SendMessageResult> {
+    const components: TemplateComponent[] = [
+      { type: "body", parameters: [{ type: "text", text: otp }] } as StandardTemplateComponent,
+      { type: "button", sub_type: buttonType, index: 0, parameters: [{ type: "text", text: otp }] } as StandardTemplateComponent,
+    ]
+    return this.sendTemplate(to, name, languageCode, components)
+  }
+
+  // ── Template Convenience: Coupon ──
+
+  async sendCouponTemplate(
+    to: string,
+    name: string,
+    languageCode: string,
+    couponCode: string,
+    bodyParams: TemplateParameter[],
+    expiresAt?: number,
+  ): Promise<SendMessageResult> {
+    const components: TemplateComponent[] = []
+    if (expiresAt !== undefined) {
+      components.push({
+        type: "limited_time_offer",
+        parameters: [{ type: "date_time", date_time: { unix_time: expiresAt } }],
+      })
+    }
+    components.push({ type: "body", parameters: bodyParams } as StandardTemplateComponent)
+    components.push({
+      type: "button", sub_type: "copy_code", index: 0, parameters: [{ type: "coupon_code", coupon_code: couponCode }],
+    } as StandardTemplateComponent)
+    return this.sendTemplate(to, name, languageCode, components)
+  }
+
   // ── Media Management ──
 
   async uploadMedia(file: Uint8Array | Blob, mimeType: string): Promise<MediaUploadResult> {
@@ -427,6 +573,22 @@ export class WhatsApp {
 
   async deleteMedia(mediaId: string): Promise<any> {
     return this.request(mediaId, { method: "DELETE" })
+  }
+
+  async uploadMediaResumable(appId: string, fileSize: number, mimeType: string, file: Uint8Array | Blob): Promise<MediaUploadResult> {
+    // Step 1: Create upload session
+    const session = await this.request<{ id: string }>(`${appId}/uploads`, {
+      body: { file_length: fileSize, file_type: mimeType, messaging_product: "whatsapp" },
+    })
+
+    // Step 2: Upload file data
+    const blob = file instanceof Blob ? file : new Blob([file as BlobPart], { type: "application/octet-stream" })
+    const result = await this.request<{ h: string }>(`${session.id}`, {
+      body: blob,
+      headers: { "Content-Type": "application/octet-stream", "file_offset": "0" },
+    })
+
+    return { id: result.h }
   }
 
   // ── Business Profile ──
@@ -622,6 +784,60 @@ export class WhatsApp {
     let fields = `template_analytics.start(${start}).end(${end})`
     if (templateIds?.length) fields += `.template_ids([${templateIds.join(",")}])`
     return this.request(`${this.wabaId}?fields=${fields}`, { method: "GET" })
+  }
+
+  async getTemplatePerformance(): Promise<any> {
+    if (!this.wabaId) throw new Error("wabaId is required for analytics")
+    return this.request(`${this.wabaId}/template_performance_metrics`, { method: "GET" })
+  }
+
+  async getPricingAnalytics(
+    start: number, end: number,
+    granularity: "HALF_HOUR" | "DAY" | "MONTH" = "DAY",
+  ): Promise<any> {
+    if (!this.wabaId) throw new Error("wabaId is required for analytics")
+    const fields = `pricing_analytics.start(${start}).end(${end}).granularity(${granularity})`
+    return this.request(`${this.wabaId}?fields=${fields}`, { method: "GET" })
+  }
+
+  async getCallAnalytics(
+    start: number, end: number,
+    granularity: "HALF_HOUR" | "DAY" | "MONTH" = "DAY",
+  ): Promise<any> {
+    if (!this.wabaId) throw new Error("wabaId is required for analytics")
+    const fields = `call_analytics.start(${start}).end(${end}).granularity(${granularity})`
+    return this.request(`${this.wabaId}?fields=${fields}`, { method: "GET" })
+  }
+
+  // ── Calling API (WebRTC) ──
+
+  async initiateCall(to: string, sdpOffer: string): Promise<any> {
+    return this.request(`${this.phoneNumberId}/calls`, {
+      body: {
+        messaging_product: "whatsapp",
+        to,
+        type: "voice",
+        voice: { sdp: sdpOffer },
+      },
+    })
+  }
+
+  async acceptCall(callId: string, sdpAnswer: string): Promise<any> {
+    return this.request(`${callId}`, {
+      body: { action: "accept", sdp: sdpAnswer },
+    })
+  }
+
+  async rejectCall(callId: string): Promise<any> {
+    return this.request(`${callId}`, {
+      body: { action: "reject" },
+    })
+  }
+
+  async terminateCall(callId: string): Promise<any> {
+    return this.request(`${callId}`, {
+      body: { action: "terminate" },
+    })
   }
 
   // ── Broadcast ──

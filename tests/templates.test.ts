@@ -165,4 +165,157 @@ describe("Templates", () => {
       }),
     ).rejects.toThrow("wabaId is required for template management")
   })
+
+  // ── getTemplate ──
+
+  it("should get template by ID", async () => {
+    const templateResponse = { id: "tpl_123", name: "hello_world", status: "APPROVED" }
+    const mock = mockFetch(templateResponse)
+    const client = createClient()
+
+    const result = await client.getTemplate("tpl_123")
+
+    expect(parseFetchUrl(mock)).toBe(`${BASE_URL}/tpl_123`)
+    expect(mock.mock.calls[0][1].method).toBe("GET")
+    expect(result).toEqual(templateResponse)
+  })
+
+  // ── updateTemplate ──
+
+  it("should update template by ID", async () => {
+    const mock = mockFetch({ success: true })
+    const client = createClient()
+
+    await client.updateTemplate("tpl_123", { components: [{ type: "BODY", text: "Updated" }], category: "UTILITY" })
+
+    expect(parseFetchUrl(mock)).toBe(`${BASE_URL}/tpl_123`)
+    expect(parseFetchBody(mock)).toEqual({ components: [{ type: "BODY", text: "Updated" }], category: "UTILITY" })
+  })
+
+  // ── sendCarouselTemplate ──
+
+  it("should send carousel template with 2 cards", async () => {
+    const mock = mockFetch(SUCCESS)
+    const client = createClient()
+
+    await client.sendCarouselTemplate("5511999999999", "promo_cards", "pt_BR",
+      [{ type: "text", text: "Welcome!" }],
+      [
+        {
+          header: { id: "img_1" },
+          bodyParams: [{ type: "text", text: "Card 1" }],
+          buttons: [{ sub_type: "quick_reply", index: 0, parameters: [{ type: "payload", payload: "card1_btn" }] }],
+        },
+        {
+          header: { url: "https://example.com/img2.jpg" },
+          bodyParams: [{ type: "text", text: "Card 2" }],
+        },
+      ],
+    )
+
+    const body = parseFetchBody(mock)
+    expect(body.type).toBe("template")
+    expect(body.template.name).toBe("promo_cards")
+    expect(body.template.components).toHaveLength(2)
+
+    // Body component
+    expect(body.template.components[0].type).toBe("body")
+    expect(body.template.components[0].parameters[0].text).toBe("Welcome!")
+
+    // Carousel component
+    const carousel = body.template.components[1]
+    expect(carousel.type).toBe("carousel")
+    expect(carousel.cards).toHaveLength(2)
+
+    // Card 0
+    expect(carousel.cards[0].card_index).toBe(0)
+    expect(carousel.cards[0].components[0].type).toBe("header")
+    expect(carousel.cards[0].components[0].parameters[0]).toEqual({ type: "image", image: { id: "img_1" } })
+    expect(carousel.cards[0].components[1].type).toBe("body")
+    expect(carousel.cards[0].components[2].type).toBe("button")
+    expect(carousel.cards[0].components[2].sub_type).toBe("quick_reply")
+
+    // Card 1 — URL header, no buttons
+    expect(carousel.cards[1].card_index).toBe(1)
+    expect(carousel.cards[1].components[0].parameters[0]).toEqual({ type: "image", image: { url: "https://example.com/img2.jpg" } })
+  })
+
+  it("should send carousel with video header type", async () => {
+    const mock = mockFetch(SUCCESS)
+    const client = createClient()
+
+    await client.sendCarouselTemplate("5511999999999", "video_cards", "en",
+      [{ type: "text", text: "Videos" }],
+      [{ header: { id: "vid_1" }, headerType: "video" }],
+    )
+
+    const body = parseFetchBody(mock)
+    const card = body.template.components[1].cards[0]
+    expect(card.components[0].parameters[0]).toEqual({ type: "video", video: { id: "vid_1" } })
+  })
+
+  // ── sendAuthTemplate ──
+
+  it("should send auth template with default url button", async () => {
+    const mock = mockFetch(SUCCESS)
+    const client = createClient()
+
+    await client.sendAuthTemplate("5511999999999", "auth_otp", "en", "123456")
+
+    const body = parseFetchBody(mock)
+    expect(body.template.name).toBe("auth_otp")
+    expect(body.template.components).toHaveLength(2)
+    expect(body.template.components[0]).toEqual({ type: "body", parameters: [{ type: "text", text: "123456" }] })
+    expect(body.template.components[1]).toEqual({ type: "button", sub_type: "url", index: 0, parameters: [{ type: "text", text: "123456" }] })
+  })
+
+  it("should send auth template with copy_code button", async () => {
+    const mock = mockFetch(SUCCESS)
+    const client = createClient()
+
+    await client.sendAuthTemplate("5511999999999", "auth_otp", "en", "654321", "copy_code")
+
+    const body = parseFetchBody(mock)
+    expect(body.template.components[1].sub_type).toBe("copy_code")
+    expect(body.template.components[1].parameters[0].text).toBe("654321")
+  })
+
+  // ── sendCouponTemplate ──
+
+  it("should send coupon template with LTO expiration", async () => {
+    const mock = mockFetch(SUCCESS)
+    const client = createClient()
+
+    await client.sendCouponTemplate("5511999999999", "promo_coupon", "pt_BR", "SAVE20",
+      [{ type: "text", text: "20% OFF" }],
+      1735689600,
+    )
+
+    const body = parseFetchBody(mock)
+    expect(body.template.components).toHaveLength(3)
+    expect(body.template.components[0]).toEqual({
+      type: "limited_time_offer",
+      parameters: [{ type: "date_time", date_time: { unix_time: 1735689600 } }],
+    })
+    expect(body.template.components[1].type).toBe("body")
+    expect(body.template.components[2]).toEqual({
+      type: "button", sub_type: "copy_code", index: 0,
+      parameters: [{ type: "coupon_code", coupon_code: "SAVE20" }],
+    })
+  })
+
+  it("should send coupon template without LTO", async () => {
+    const mock = mockFetch(SUCCESS)
+    const client = createClient()
+
+    await client.sendCouponTemplate("5511999999999", "coupon_basic", "pt_BR", "FREESHIP",
+      [{ type: "text", text: "Frete gratis" }],
+    )
+
+    const body = parseFetchBody(mock)
+    expect(body.template.components).toHaveLength(2)
+    expect(body.template.components[0].type).toBe("body")
+    expect(body.template.components[1].type).toBe("button")
+    expect(body.template.components[1].parameters[0].coupon_code).toBe("FREESHIP")
+  })
 })

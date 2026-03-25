@@ -10,6 +10,7 @@ export interface WhatsAppConfig {
   accessToken: string;
   apiVersion?: string;
   wabaId?: string;
+  validate?: boolean;
 }
 
 // ── Media ───────────────────────────────────────────────────────────────────
@@ -162,6 +163,68 @@ export interface AddressMessageOptions {
   savedAddresses?: SavedAddress[];
 }
 
+// ── Payment / Order ──────────────────────────────────────────────────
+
+export interface OrderAmount {
+  value: number    // integer in minor units (e.g. 2990 = R$29.90)
+  offset: number   // 100 for BRL (2 decimal places)
+}
+
+export interface OrderDetailItem {
+  retailer_id: string
+  name: string
+  amount: OrderAmount
+  quantity: number
+  sale_amount?: OrderAmount
+  country_of_origin?: string
+  importer_name?: string
+  importer_address?: string
+}
+
+export interface OrderDetailOrder {
+  status: "pending" | "processing" | "completed" | "failed" | string
+  catalog_id?: string
+  items: OrderDetailItem[]
+  subtotal: OrderAmount
+  tax?: OrderAmount
+  shipping?: OrderAmount
+  discount?: OrderAmount
+  expiration?: {
+    timestamp: string
+    description?: string
+  }
+}
+
+export interface OrderDetailsAction {
+  referenceId: string
+  type?: "digital-goods" | "physical-goods" | string
+  paymentType: "br" | "upi" | string
+  paymentConfiguration: string
+  currency: string
+  totalAmount: OrderAmount
+  order: OrderDetailOrder
+}
+
+export interface OrderDetailsOptions {
+  header?: string
+  footer?: string
+}
+
+export type OrderStatusValue = "pending" | "processing" | "completed" | "failed" | string
+
+export interface OrderStatusAction {
+  referenceId: string
+  order: {
+    status: OrderStatusValue
+    description?: string
+  }
+}
+
+export interface OrderStatusOptions {
+  header?: string
+  footer?: string
+}
+
 // ── Flow ──────────────────────────────────────────────────────────────
 
 export interface FlowAction {
@@ -180,13 +243,46 @@ export type TemplateParameter =
   | { type: "image"; image: MediaSource }
   | { type: "video"; video: MediaSource }
   | { type: "document"; document: MediaSource }
-  | { type: "payload"; payload: string };
+  | { type: "payload"; payload: string }
+  | { type: "currency"; currency: { fallback_value: string; code: string; amount_1000: number } }
+  | { type: "date_time"; date_time: { fallback_value?: string; unix_time: number } }
+  | { type: "coupon_code"; coupon_code: string };
 
-export interface TemplateComponent {
+export interface StandardTemplateComponent {
   type: "header" | "body" | "button";
   sub_type?: string;
   index?: number;
   parameters: TemplateParameter[];
+}
+
+export interface CarouselCard {
+  card_index: number
+  components: StandardTemplateComponent[]
+}
+
+export interface CarouselTemplateComponent {
+  type: "carousel"
+  cards: CarouselCard[]
+}
+
+export interface LTOTemplateComponent {
+  type: "limited_time_offer"
+  parameters: [{ type: "date_time"; date_time: { fallback_value?: string; unix_time: number } }]
+}
+
+export type TemplateComponent = StandardTemplateComponent | CarouselTemplateComponent | LTOTemplateComponent
+
+export interface CarouselCardInput {
+  header: MediaSource
+  headerType?: "image" | "video"
+  bodyParams?: TemplateParameter[]
+  buttons?: CarouselCardButton[]
+}
+
+export interface CarouselCardButton {
+  sub_type: "quick_reply" | "url" | "phone_number"
+  index: number
+  parameters: TemplateParameter[]
 }
 
 export interface TemplateCreateRequest {
@@ -194,6 +290,11 @@ export interface TemplateCreateRequest {
   category: "MARKETING" | "UTILITY" | "AUTHENTICATION";
   language: string;
   components: any[];
+}
+
+export interface TemplateUpdateRequest {
+  components?: any[]
+  category?: "MARKETING" | "UTILITY" | "AUTHENTICATION"
 }
 
 // ── Media Results ───────────────────────────────────────────────────────────
@@ -325,6 +426,7 @@ export interface InteractiveReply {
   type: string;
   button_reply?: { id: string; title: string };
   list_reply?: { id: string; title: string; description?: string };
+  nfm_reply?: { response_json: string; body: string; name: string };
 }
 
 export interface InboundMessageBase {
