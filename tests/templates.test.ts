@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { WhatsApp } from "../src/client.js"
+import { ValidationError } from "../src/validate.js"
 
 const PHONE_ID = "123456789"
 const TOKEN = "test-token"
@@ -13,6 +14,10 @@ function createClient() {
 
 function createClientNoWaba() {
   return new WhatsApp({ phoneNumberId: PHONE_ID, accessToken: TOKEN })
+}
+
+function createValidatingClient() {
+  return new WhatsApp({ phoneNumberId: PHONE_ID, accessToken: TOKEN, wabaId: WABA_ID, validate: true })
 }
 
 function mockFetch(responseBody: any, status = 200) {
@@ -644,21 +649,21 @@ describe("Templates", () => {
     ])
   })
 
-  it("should create authentication template with copy_code button", async () => {
+  it("should create marketing coupon template with copy_code button", async () => {
     const mock = mockFetch(CREATE_OK)
     const client = createClient()
 
     await client.createStandardTemplate({
-      name: "otp_copy",
+      name: "coupon_promo",
       language: "pt_BR",
-      category: "AUTHENTICATION",
-      body: { text: "Seu código: {{1}}", example: ["123456"] },
-      buttons: [{ type: "copy_code", example: "123456" }],
+      category: "MARKETING",
+      body: { text: "Use o código {{1}} pra 20% off", example: ["SAVE20"] },
+      buttons: [{ type: "copy_code", example: "SAVE20" }],
     })
 
     const body = parseFetchBody(mock)
     const btns = body.components[1]
-    expect(btns.buttons[0]).toEqual({ type: "copy_code", example: "123456" })
+    expect(btns.buttons[0]).toEqual({ type: "copy_code", example: "SAVE20" })
   })
 
   it("should reject standard template with empty body", async () => {
@@ -673,9 +678,9 @@ describe("Templates", () => {
     })).rejects.toThrow(/body.*empty|body.*required/i)
   })
 
-  it("should reject standard template with body over 1024 chars", async () => {
+  it("should reject standard template with body over 1024 chars (validate: true)", async () => {
     mockFetch(CREATE_OK)
-    const client = createClient()
+    const client = createValidatingClient()
 
     await expect(client.createStandardTemplate({
       name: "huge",
@@ -683,6 +688,57 @@ describe("Templates", () => {
       category: "UTILITY",
       body: { text: "x".repeat(1025) },
     })).rejects.toThrow(/1024/)
+  })
+
+  it("should accept standard template with body exactly 1024 chars (boundary)", async () => {
+    mockFetch(CREATE_OK)
+    const client = createValidatingClient()
+
+    await expect(client.createStandardTemplate({
+      name: "edge",
+      language: "pt_BR",
+      category: "UTILITY",
+      body: { text: "x".repeat(1024) },
+    })).resolves.toBeDefined()
+  })
+
+  it("should reject standard template with text header over 60 chars (validate: true)", async () => {
+    mockFetch(CREATE_OK)
+    const client = createValidatingClient()
+
+    await expect(client.createStandardTemplate({
+      name: "big_header",
+      language: "pt_BR",
+      category: "MARKETING",
+      header: { type: "text", text: "x".repeat(61) },
+      body: { text: "ok" },
+    })).rejects.toThrow(/header.*60|60.*header/i)
+  })
+
+  it("should reject standard template with footer over 60 chars (validate: true)", async () => {
+    mockFetch(CREATE_OK)
+    const client = createValidatingClient()
+
+    await expect(client.createStandardTemplate({
+      name: "big_footer",
+      language: "pt_BR",
+      category: "MARKETING",
+      body: { text: "ok" },
+      footer: "x".repeat(61),
+    })).rejects.toThrow(/footer.*60|60.*footer/i)
+  })
+
+  it("should skip char-limit checks when validate flag is off", async () => {
+    mockFetch(CREATE_OK)
+    const client = createClient()
+
+    await expect(client.createStandardTemplate({
+      name: "no_validation",
+      language: "pt_BR",
+      category: "UTILITY",
+      body: { text: "x".repeat(2000) },
+      footer: "x".repeat(200),
+    })).resolves.toBeDefined()
   })
 
   it("should throw on createStandardTemplate without wabaId", async () => {
@@ -694,5 +750,129 @@ describe("Templates", () => {
       category: "UTILITY",
       body: { text: "x" },
     })).rejects.toThrow(/wabaId is required/)
+  })
+
+  // ── ValidationError instance + carousel extra coverage ──
+
+  it("should throw ValidationError instance (not raw Error) on validation failure", async () => {
+    mockFetch(CREATE_OK)
+    const client = createClient()
+
+    await expect(client.createStandardTemplate({
+      name: "x",
+      language: "pt_BR",
+      category: "UTILITY",
+      body: { text: "" },
+    })).rejects.toBeInstanceOf(ValidationError)
+  })
+
+  it("should reject carousel where header formats differ across cards", async () => {
+    mockFetch(CREATE_OK)
+    const client = createClient()
+
+    await expect(client.createCarouselTemplate({
+      name: "format_mix",
+      language: "pt_BR",
+      body: { text: "ok" },
+      cards: [
+        { header: { format: "image", handle: "h1" } },
+        { header: { format: "video", handle: "v2" } },
+      ],
+    })).rejects.toThrow(/same components/i)
+  })
+
+  it("should reject carousel with empty body", async () => {
+    mockFetch(CREATE_OK)
+    const client = createClient()
+
+    await expect(client.createCarouselTemplate({
+      name: "no_body",
+      language: "pt_BR",
+      body: { text: "" },
+      cards: [
+        { header: { format: "image", handle: "h1" } },
+        { header: { format: "image", handle: "h2" } },
+      ],
+    })).rejects.toThrow(/body.*empty|body.*required/i)
+  })
+
+  it("should reject carousel with body over 1024 chars (validate: true)", async () => {
+    mockFetch(CREATE_OK)
+    const client = createValidatingClient()
+
+    await expect(client.createCarouselTemplate({
+      name: "huge_body",
+      language: "pt_BR",
+      body: { text: "x".repeat(1025) },
+      cards: [
+        { header: { format: "image", handle: "h1" } },
+        { header: { format: "image", handle: "h2" } },
+      ],
+    })).rejects.toThrow(/1024/)
+  })
+
+  it("should reject carousel with card body over 160 chars (validate: true)", async () => {
+    mockFetch(CREATE_OK)
+    const client = createValidatingClient()
+
+    await expect(client.createCarouselTemplate({
+      name: "big_card",
+      language: "pt_BR",
+      body: { text: "ok" },
+      cards: [
+        { header: { format: "image", handle: "h1" }, body: { text: "x".repeat(161) } },
+        { header: { format: "image", handle: "h2" }, body: { text: "ok" } },
+      ],
+    })).rejects.toThrow(/160/)
+  })
+
+  it("should accept carousel with exactly 2 cards (lower boundary)", async () => {
+    mockFetch(CREATE_OK)
+    const client = createClient()
+
+    await expect(client.createCarouselTemplate({
+      name: "min_cards",
+      language: "pt_BR",
+      body: { text: "ok" },
+      cards: [
+        { header: { format: "image", handle: "h1" } },
+        { header: { format: "image", handle: "h2" } },
+      ],
+    })).resolves.toBeDefined()
+  })
+
+  it("should accept carousel with exactly 10 cards (upper boundary)", async () => {
+    mockFetch(CREATE_OK)
+    const client = createClient()
+
+    const cards = Array.from({ length: 10 }, (_, i) => ({
+      header: { format: "image" as const, handle: `h${i}` },
+    }))
+
+    await expect(client.createCarouselTemplate({
+      name: "max_cards",
+      language: "pt_BR",
+      body: { text: "ok" },
+      cards,
+    })).resolves.toBeDefined()
+  })
+
+  it("should build carousel card with quick_reply button output", async () => {
+    const mock = mockFetch(CREATE_OK)
+    const client = createClient()
+
+    await client.createCarouselTemplate({
+      name: "qr_carousel",
+      language: "pt_BR",
+      body: { text: "ok" },
+      cards: [
+        { header: { format: "image", handle: "h1" }, buttons: [{ type: "quick_reply", text: "More" }] },
+        { header: { format: "image", handle: "h2" }, buttons: [{ type: "quick_reply", text: "More" }] },
+      ],
+    })
+
+    const body = parseFetchBody(mock)
+    const card0Buttons = body.components[1].cards[0].components[1]
+    expect(card0Buttons).toEqual({ type: "buttons", buttons: [{ type: "quick_reply", text: "More" }] })
   })
 })

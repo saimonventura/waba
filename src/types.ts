@@ -287,6 +287,14 @@ export interface CarouselCardButton {
 
 export type TemplateCategory = "MARKETING" | "UTILITY" | "AUTHENTICATION"
 
+export type TemplateStatus = "PENDING" | "APPROVED" | "REJECTED" | "PAUSED" | "DISABLED" | "IN_APPEAL"
+
+export interface TemplateCreateResponse {
+  id: string
+  status: TemplateStatus
+  category: TemplateCategory
+}
+
 export interface TemplateCreateRequest {
   name: string;
   category: TemplateCategory;
@@ -300,6 +308,8 @@ export interface TemplateUpdateRequest {
 }
 
 // ── Template Creation Helpers (typed inputs for create*) ─────────────────────
+// Auth templates have a different payload shape — use sendAuthTemplate / a future
+// createAuthTemplate helper, not these inputs.
 
 export type StandardHeaderInput =
   | { type: "text"; text: string; example?: string }
@@ -312,12 +322,11 @@ export type StandardButtonInput =
   | { type: "url"; text: string; url: string; example?: string }
   | { type: "phone_number"; text: string; phone_number: string }
   | { type: "copy_code"; example: string }
-  | { type: "otp"; otp_type: "copy_code" | "one_tap"; text: string; autofill_text?: string; package_name?: string; signature_hash?: string }
 
 export interface StandardTemplateCreateInput {
   name: string
   language: string
-  category: TemplateCategory
+  category: "MARKETING" | "UTILITY"
   header?: StandardHeaderInput
   body: { text: string; example?: string[] }
   footer?: string

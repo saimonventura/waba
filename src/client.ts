@@ -8,10 +8,11 @@ import type {
   StandardTemplateComponent, CarouselCardInput, TemplateParameter,
   StandardTemplateCreateInput, CarouselTemplateCreateInput, CarouselCardCreateInput,
   StandardHeaderInput, StandardButtonInput, CarouselCardButtonInput,
+  TemplateCreateResponse,
 } from "./types.js"
 import { WhatsAppError } from "./errors.js"
 import { verifyWebhook, parseWebhook, validateSignature, parseWebhookWithSignature } from "./webhook.js"
-import { validateText, validateButtons, validateList, validateCTA, validateInteractiveBody, validateHeaderFooter } from "./validate.js"
+import { validateText, validateButtons, validateList, validateCTA, validateInteractiveBody, validateHeaderFooter, ValidationError } from "./validate.js"
 import type { VerifyQuery } from "./webhook.js"
 import type { WebhookEvent } from "./types.js"
 
@@ -469,26 +470,26 @@ export class WhatsApp {
 
   // ── Template Convenience: Create ──
 
-  async createStandardTemplate(input: StandardTemplateCreateInput): Promise<any> {
+  async createStandardTemplate(input: StandardTemplateCreateInput): Promise<TemplateCreateResponse> {
     if (!this.wabaId) throw new Error("wabaId is required for template management")
-    validateStandardTemplateInput(input)
+    validateStandardTemplateInput(input, this.validate)
     return this.createTemplate({
       name: input.name,
       language: input.language,
       category: input.category,
       components: buildStandardTemplateComponents(input),
-    })
+    }) as Promise<TemplateCreateResponse>
   }
 
-  async createCarouselTemplate(input: CarouselTemplateCreateInput): Promise<any> {
+  async createCarouselTemplate(input: CarouselTemplateCreateInput): Promise<TemplateCreateResponse> {
     if (!this.wabaId) throw new Error("wabaId is required for template management")
-    validateCarouselTemplateInput(input)
+    validateCarouselTemplateInput(input, this.validate)
     return this.createTemplate({
       name: input.name,
       language: input.language,
       category: "MARKETING",
       components: buildCarouselTemplateComponents(input),
-    })
+    }) as Promise<TemplateCreateResponse>
   }
 
   // ── Template Convenience: Carousel ──
@@ -922,18 +923,22 @@ export class WhatsApp {
 
 // ── Template Build Helpers (private to module) ─────────────────────────────
 
-function validateStandardTemplateInput(input: StandardTemplateCreateInput): void {
+// Structural checks always run (would produce malformed JSON otherwise);
+// char-limit checks only when `extended` is true (gated by client's `validate` flag).
+function validateStandardTemplateInput(input: StandardTemplateCreateInput, extended: boolean): void {
   if (!input.body || !input.body.text || input.body.text.length === 0) {
-    throw new Error("template body is required and cannot be empty")
+    throw new ValidationError("template body is required and cannot be empty", "body", 0)
   }
+  if (!extended) return
+
   if (input.body.text.length > 1024) {
-    throw new Error("template body cannot exceed 1024 characters")
+    throw new ValidationError(`template body exceeds 1024 chars (got ${input.body.text.length})`, "body", 1024)
   }
   if (input.header?.type === "text" && input.header.text.length > 60) {
-    throw new Error("text header cannot exceed 60 characters")
+    throw new ValidationError(`text header exceeds 60 chars (got ${input.header.text.length})`, "header.text", 60)
   }
   if (input.footer && input.footer.length > 60) {
-    throw new Error("footer cannot exceed 60 characters")
+    throw new ValidationError(`footer exceeds 60 chars (got ${input.footer.length})`, "footer", 60)
   }
 }
 
@@ -949,12 +954,21 @@ function buildStandardTemplateComponents(input: StandardTemplateCreateInput): an
 }
 
 function buildHeaderComponent(h: StandardHeaderInput): any {
-  if (h.type === "text") {
-    const c: any = { type: "header", format: "text", text: h.text }
-    if (h.example !== undefined) c.example = { header_text: [h.example] }
-    return c
+  switch (h.type) {
+    case "text": {
+      const c: any = { type: "header", format: "text", text: h.text }
+      if (h.example !== undefined) c.example = { header_text: [h.example] }
+      return c
+    }
+    case "image":
+    case "video":
+    case "document":
+      return { type: "header", format: h.type, example: { header_handle: [h.handle] } }
+    default: {
+      const _exhaustive: never = h
+      throw new Error(`unsupported header type: ${JSON.stringify(_exhaustive)}`)
+    }
   }
-  return { type: "header", format: h.type, example: { header_handle: [h.handle] } }
 }
 
 function buildBodyComponent(b: { text: string; example?: string[] }): any {
@@ -976,31 +990,40 @@ function buildStandardButton(b: StandardButtonInput): any {
       return { type: "quick_reply", text: b.text }
     case "copy_code":
       return { type: "copy_code", example: b.example }
-    case "otp": {
-      const out: any = { type: "otp", otp_type: b.otp_type, text: b.text }
-      if (b.autofill_text) out.autofill_text = b.autofill_text
-      if (b.package_name) out.package_name = b.package_name
-      if (b.signature_hash) out.signature_hash = b.signature_hash
-      return out
+    default: {
+      const _exhaustive: never = b
+      throw new Error(`unsupported standard button type: ${JSON.stringify(_exhaustive)}`)
     }
   }
 }
 
-function validateCarouselTemplateInput(input: CarouselTemplateCreateInput): void {
-  if (input.cards.length < 2) throw new Error("carousel must have at least 2 cards")
-  if (input.cards.length > 10) throw new Error("carousel can have at most 10 cards")
-  if (!input.body?.text) throw new Error("carousel body text is required")
-  if (input.body.text.length > 1024) throw new Error("carousel body cannot exceed 1024 characters")
+function validateCarouselTemplateInput(input: CarouselTemplateCreateInput, extended: boolean): void {
+  if (input.cards.length < 2) {
+    throw new ValidationError(`carousel must have at least 2 cards (got ${input.cards.length})`, "cards", 2)
+  }
+  if (input.cards.length > 10) {
+    throw new ValidationError(`carousel can have at most 10 cards (got ${input.cards.length})`, "cards", 10)
+  }
+  if (!input.body || !input.body.text || input.body.text.length === 0) {
+    throw new ValidationError("carousel body text is required and cannot be empty", "body", 0)
+  }
 
   const ref = input.cards[0]
   for (let i = 1; i < input.cards.length; i++) {
     if (!sameCardStructure(ref, input.cards[i])) {
-      throw new Error(`all cards must have the same components (mismatch at card ${i})`)
+      throw new ValidationError(`all cards must have the same components (mismatch at card ${i})`, "cards", i)
     }
   }
-  for (const card of input.cards) {
+
+  if (!extended) return
+
+  if (input.body.text.length > 1024) {
+    throw new ValidationError(`carousel body exceeds 1024 chars (got ${input.body.text.length})`, "body", 1024)
+  }
+  for (let i = 0; i < input.cards.length; i++) {
+    const card = input.cards[i]
     if (card.body && card.body.text.length > 160) {
-      throw new Error("card body cannot exceed 160 characters")
+      throw new ValidationError(`card[${i}] body exceeds 160 chars (got ${card.body.text.length})`, "card.body", 160)
     }
   }
 }
@@ -1049,5 +1072,9 @@ function buildCarouselCardButton(b: CarouselCardButtonInput): any {
       return { type: "phone_number", text: b.text, phone_number: b.phone_number }
     case "quick_reply":
       return { type: "quick_reply", text: b.text }
+    default: {
+      const _exhaustive: never = b
+      throw new Error(`unsupported carousel card button type: ${JSON.stringify(_exhaustive)}`)
+    }
   }
 }
