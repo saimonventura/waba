@@ -1,8 +1,8 @@
 # @saimonventura/waba
 
-[![npm](https://img.shields.io/npm/v/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![downloads](https://img.shields.io/npm/dm/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![license](https://img.shields.io/npm/l/@saimonventura/waba)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/) [![tests](https://img.shields.io/badge/tests-184%20passing-brightgreen)]() [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen)]() [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![npm](https://img.shields.io/npm/v/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![downloads](https://img.shields.io/npm/dm/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![license](https://img.shields.io/npm/l/@saimonventura/waba)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/) [![tests](https://img.shields.io/badge/tests-202%20passing-brightgreen)]() [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen)]() [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-**The complete WhatsApp Cloud API SDK for TypeScript.** Zero dependencies. 81 methods. Every API surface covered.
+**The complete WhatsApp Cloud API SDK for TypeScript.** Zero dependencies. 83 methods. Every API surface covered.
 
 ```ts
 import { WhatsApp } from "@saimonventura/waba"
@@ -19,7 +19,7 @@ await wa.sendText("5511999999999", "Hello from waba!")
 
 | | **waba** | whatsapp-api-js | @kapso/whatsapp-cloud-api |
 |---|:---:|:---:|:---:|
-| **API methods** | 79 | ~30 | ~25 |
+| **API methods** | 83 | ~30 | ~25 |
 | **Dependencies** | 0 | 1+ | 5+ (Zod, etc.) |
 | **Flows API** | 9 methods | - | - |
 | **Analytics API** | 3 methods | - | - |
@@ -202,6 +202,47 @@ const templates = await wa.listTemplates({ status: "APPROVED" })
 await wa.createTemplate({ name: "my_template", language: "pt_BR", category: "UTILITY", components: [] })
 await wa.deleteTemplate("my_template")
 ```
+
+### Creating templates (typed builders)
+
+Avoid hand-crafting `components` arrays. Two helpers cover most marketing/utility cases:
+
+```ts
+// Standard template — header + body + footer + buttons
+await wa.createStandardTemplate({
+  name: "order_shipped",
+  language: "pt_BR",
+  category: "UTILITY",
+  header: { type: "text", text: "Pedido enviado, {{1}}!", example: "Pablo" },
+  body: { text: "Seu pedido {{1}} chega em {{2}}.", example: ["#1234", "3 dias"] },
+  footer: "Triptem © 2026",
+  buttons: [
+    { type: "url", text: "Rastrear", url: "https://triptem.com/order/{{1}}", example: "1234" },
+    { type: "phone_number", text: "Ligar", phone_number: "+5511999999999" },
+  ],
+})
+
+// Carousel template — 2 to 10 product cards (uploaded handles via uploadMediaResumable)
+await wa.createCarouselTemplate({
+  name: "promo_v1",
+  language: "pt_BR",
+  body: { text: "Confira nossas ofertas! 🛒" },
+  cards: [
+    {
+      header: { format: "image", handle: handle1 },
+      body: { text: "Produto A\n*R$ 9,90*" },
+      buttons: [{ type: "url", text: "Comprar", url: "https://shop.example.com" }],
+    },
+    {
+      header: { format: "image", handle: handle2 },
+      body: { text: "Produto B\n*R$ 19,90*" },
+      buttons: [{ type: "url", text: "Comprar", url: "https://shop.example.com" }],
+    },
+  ],
+})
+```
+
+Both helpers validate invariants before submitting (carousel: 2–10 cards, all cards must share the same component structure; standard: body required, char limits enforced) and throw a descriptive `Error` on violation.
 
 ## Broadcast
 
@@ -394,7 +435,7 @@ import type {
 } from "@saimonventura/waba"
 ```
 
-## All 79 Methods
+## All 83 Methods
 
 | Category | Methods |
 |---|---|
@@ -402,7 +443,7 @@ import type {
 | **Reactions** | `sendReaction` `removeReaction` |
 | **Interactive** | `sendButtons` `sendList` `sendCTA` `sendProduct` `sendProductList` `sendCatalog` `sendLocationRequest` `sendAddressMessage` `sendFlow` `sendVoiceCall` `sendOrderDetails` `sendOrderStatus` |
 | **Status** | `markAsRead` `sendTypingIndicator` |
-| **Templates** | `sendTemplate` `sendCarouselTemplate` `sendAuthTemplate` `sendCouponTemplate` `listTemplates` `getTemplate` `createTemplate` `updateTemplate` `deleteTemplate` |
+| **Templates** | `sendTemplate` `sendCarouselTemplate` `sendAuthTemplate` `sendCouponTemplate` `listTemplates` `getTemplate` `createTemplate` `createStandardTemplate` `createCarouselTemplate` `updateTemplate` `deleteTemplate` |
 | **Media** | `uploadMedia` `uploadMediaResumable` `getMediaUrl` `downloadMedia` `deleteMedia` |
 | **Business Profile** | `getBusinessProfile` `updateBusinessProfile` |
 | **Phone** | `getPhoneInfo` `registerPhone` `deregisterPhone` `requestVerificationCode` `verifyCode` |

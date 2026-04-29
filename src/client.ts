@@ -6,6 +6,8 @@ import type {
   CommerceSettings, HealthStatusResponse, PhoneNumberEntry, QRCode, FlowInfo,
   BroadcastResult, OrderDetailsAction, OrderDetailsOptions, OrderStatusAction, OrderStatusOptions,
   StandardTemplateComponent, CarouselCardInput, TemplateParameter,
+  StandardTemplateCreateInput, CarouselTemplateCreateInput, CarouselCardCreateInput,
+  StandardHeaderInput, StandardButtonInput, CarouselCardButtonInput,
 } from "./types.js"
 import { WhatsAppError } from "./errors.js"
 import { verifyWebhook, parseWebhook, validateSignature, parseWebhookWithSignature } from "./webhook.js"
@@ -465,6 +467,30 @@ export class WhatsApp {
     return this.request(templateId, { body: data })
   }
 
+  // ── Template Convenience: Create ──
+
+  async createStandardTemplate(input: StandardTemplateCreateInput): Promise<any> {
+    if (!this.wabaId) throw new Error("wabaId is required for template management")
+    validateStandardTemplateInput(input)
+    return this.createTemplate({
+      name: input.name,
+      language: input.language,
+      category: input.category,
+      components: buildStandardTemplateComponents(input),
+    })
+  }
+
+  async createCarouselTemplate(input: CarouselTemplateCreateInput): Promise<any> {
+    if (!this.wabaId) throw new Error("wabaId is required for template management")
+    validateCarouselTemplateInput(input)
+    return this.createTemplate({
+      name: input.name,
+      language: input.language,
+      category: "MARKETING",
+      components: buildCarouselTemplateComponents(input),
+    })
+  }
+
   // ── Template Convenience: Carousel ──
 
   async sendCarouselTemplate(
@@ -891,5 +917,137 @@ export class WhatsApp {
 
   static parseWebhookWithSignature(rawBody: string | Buffer, signature: string, appSecret: string): WebhookEvent[] {
     return parseWebhookWithSignature(rawBody, signature, appSecret)
+  }
+}
+
+// ── Template Build Helpers (private to module) ─────────────────────────────
+
+function validateStandardTemplateInput(input: StandardTemplateCreateInput): void {
+  if (!input.body || !input.body.text || input.body.text.length === 0) {
+    throw new Error("template body is required and cannot be empty")
+  }
+  if (input.body.text.length > 1024) {
+    throw new Error("template body cannot exceed 1024 characters")
+  }
+  if (input.header?.type === "text" && input.header.text.length > 60) {
+    throw new Error("text header cannot exceed 60 characters")
+  }
+  if (input.footer && input.footer.length > 60) {
+    throw new Error("footer cannot exceed 60 characters")
+  }
+}
+
+function buildStandardTemplateComponents(input: StandardTemplateCreateInput): any[] {
+  const components: any[] = []
+  if (input.header) components.push(buildHeaderComponent(input.header))
+  components.push(buildBodyComponent(input.body))
+  if (input.footer) components.push({ type: "footer", text: input.footer })
+  if (input.buttons && input.buttons.length > 0) {
+    components.push({ type: "buttons", buttons: input.buttons.map(buildStandardButton) })
+  }
+  return components
+}
+
+function buildHeaderComponent(h: StandardHeaderInput): any {
+  if (h.type === "text") {
+    const c: any = { type: "header", format: "text", text: h.text }
+    if (h.example !== undefined) c.example = { header_text: [h.example] }
+    return c
+  }
+  return { type: "header", format: h.type, example: { header_handle: [h.handle] } }
+}
+
+function buildBodyComponent(b: { text: string; example?: string[] }): any {
+  const c: any = { type: "body", text: b.text }
+  if (b.example && b.example.length > 0) c.example = { body_text: [b.example] }
+  return c
+}
+
+function buildStandardButton(b: StandardButtonInput): any {
+  switch (b.type) {
+    case "url": {
+      const out: any = { type: "url", text: b.text, url: b.url }
+      if (b.example !== undefined) out.example = [b.example]
+      return out
+    }
+    case "phone_number":
+      return { type: "phone_number", text: b.text, phone_number: b.phone_number }
+    case "quick_reply":
+      return { type: "quick_reply", text: b.text }
+    case "copy_code":
+      return { type: "copy_code", example: b.example }
+    case "otp": {
+      const out: any = { type: "otp", otp_type: b.otp_type, text: b.text }
+      if (b.autofill_text) out.autofill_text = b.autofill_text
+      if (b.package_name) out.package_name = b.package_name
+      if (b.signature_hash) out.signature_hash = b.signature_hash
+      return out
+    }
+  }
+}
+
+function validateCarouselTemplateInput(input: CarouselTemplateCreateInput): void {
+  if (input.cards.length < 2) throw new Error("carousel must have at least 2 cards")
+  if (input.cards.length > 10) throw new Error("carousel can have at most 10 cards")
+  if (!input.body?.text) throw new Error("carousel body text is required")
+  if (input.body.text.length > 1024) throw new Error("carousel body cannot exceed 1024 characters")
+
+  const ref = input.cards[0]
+  for (let i = 1; i < input.cards.length; i++) {
+    if (!sameCardStructure(ref, input.cards[i])) {
+      throw new Error(`all cards must have the same components (mismatch at card ${i})`)
+    }
+  }
+  for (const card of input.cards) {
+    if (card.body && card.body.text.length > 160) {
+      throw new Error("card body cannot exceed 160 characters")
+    }
+  }
+}
+
+function sameCardStructure(a: CarouselCardCreateInput, b: CarouselCardCreateInput): boolean {
+  if (a.header.format !== b.header.format) return false
+  if (Boolean(a.body) !== Boolean(b.body)) return false
+  const aBtns = a.buttons || []
+  const bBtns = b.buttons || []
+  if (aBtns.length !== bBtns.length) return false
+  for (let i = 0; i < aBtns.length; i++) {
+    if (aBtns[i].type !== bBtns[i].type) return false
+  }
+  return true
+}
+
+function buildCarouselTemplateComponents(input: CarouselTemplateCreateInput): any[] {
+  return [
+    buildBodyComponent(input.body),
+    {
+      type: "carousel",
+      cards: input.cards.map(card => ({ components: buildCarouselCardComponents(card) })),
+    },
+  ]
+}
+
+function buildCarouselCardComponents(card: CarouselCardCreateInput): any[] {
+  const comps: any[] = [
+    { type: "header", format: card.header.format, example: { header_handle: [card.header.handle] } },
+  ]
+  if (card.body) comps.push(buildBodyComponent(card.body))
+  if (card.buttons && card.buttons.length > 0) {
+    comps.push({ type: "buttons", buttons: card.buttons.map(buildCarouselCardButton) })
+  }
+  return comps
+}
+
+function buildCarouselCardButton(b: CarouselCardButtonInput): any {
+  switch (b.type) {
+    case "url": {
+      const out: any = { type: "url", text: b.text, url: b.url }
+      if (b.example !== undefined) out.example = [b.example]
+      return out
+    }
+    case "phone_number":
+      return { type: "phone_number", text: b.text, phone_number: b.phone_number }
+    case "quick_reply":
+      return { type: "quick_reply", text: b.text }
   }
 }

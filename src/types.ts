@@ -285,16 +285,65 @@ export interface CarouselCardButton {
   parameters: TemplateParameter[]
 }
 
+export type TemplateCategory = "MARKETING" | "UTILITY" | "AUTHENTICATION"
+
 export interface TemplateCreateRequest {
   name: string;
-  category: "MARKETING" | "UTILITY" | "AUTHENTICATION";
+  category: TemplateCategory;
   language: string;
   components: any[];
 }
 
 export interface TemplateUpdateRequest {
   components?: any[]
-  category?: "MARKETING" | "UTILITY" | "AUTHENTICATION"
+  category?: TemplateCategory
+}
+
+// ── Template Creation Helpers (typed inputs for create*) ─────────────────────
+
+export type StandardHeaderInput =
+  | { type: "text"; text: string; example?: string }
+  | { type: "image"; handle: string }
+  | { type: "video"; handle: string }
+  | { type: "document"; handle: string }
+
+export type StandardButtonInput =
+  | { type: "quick_reply"; text: string }
+  | { type: "url"; text: string; url: string; example?: string }
+  | { type: "phone_number"; text: string; phone_number: string }
+  | { type: "copy_code"; example: string }
+  | { type: "otp"; otp_type: "copy_code" | "one_tap"; text: string; autofill_text?: string; package_name?: string; signature_hash?: string }
+
+export interface StandardTemplateCreateInput {
+  name: string
+  language: string
+  category: TemplateCategory
+  header?: StandardHeaderInput
+  body: { text: string; example?: string[] }
+  footer?: string
+  buttons?: StandardButtonInput[]
+}
+
+export type CarouselCardHeaderInput =
+  | { format: "image"; handle: string }
+  | { format: "video"; handle: string }
+
+export type CarouselCardButtonInput =
+  | { type: "quick_reply"; text: string }
+  | { type: "url"; text: string; url: string; example?: string }
+  | { type: "phone_number"; text: string; phone_number: string }
+
+export interface CarouselCardCreateInput {
+  header: CarouselCardHeaderInput
+  body?: { text: string; example?: string[] }
+  buttons?: CarouselCardButtonInput[]
+}
+
+export interface CarouselTemplateCreateInput {
+  name: string
+  language: string
+  body: { text: string; example?: string[] }
+  cards: CarouselCardCreateInput[]
 }
 
 // ── Media Results ───────────────────────────────────────────────────────────
