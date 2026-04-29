@@ -1,8 +1,8 @@
 # @saimonventura/waba
 
-[![npm](https://img.shields.io/npm/v/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![downloads](https://img.shields.io/npm/dm/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![license](https://img.shields.io/npm/l/@saimonventura/waba)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/) [![tests](https://img.shields.io/badge/tests-218%20passing-brightgreen)]() [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen)]() [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![npm](https://img.shields.io/npm/v/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![downloads](https://img.shields.io/npm/dm/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![license](https://img.shields.io/npm/l/@saimonventura/waba)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/) [![tests](https://img.shields.io/badge/tests-237%20passing-brightgreen)]() [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen)]() [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-**The complete WhatsApp Cloud API SDK for TypeScript.** Zero dependencies. 83 methods. Every API surface covered.
+**The complete WhatsApp Cloud API SDK for TypeScript.** Zero dependencies. 95 methods. Every API surface covered.
 
 ```ts
 import { WhatsApp } from "@saimonventura/waba"
@@ -19,7 +19,7 @@ await wa.sendText("5511999999999", "Hello from waba!")
 
 | | **waba** | whatsapp-api-js | @kapso/whatsapp-cloud-api |
 |---|:---:|:---:|:---:|
-| **API methods** | 83 | ~30 | ~25 |
+| **API methods** | 95 | ~30 | ~25 |
 | **Dependencies** | 0 | 1+ | 5+ (Zod, etc.) |
 | **Flows API** | 9 methods | - | - |
 | **Analytics API** | 3 methods | - | - |
@@ -251,6 +251,69 @@ await wa.createCarouselTemplate({
 
 Both helpers validate invariants before submitting (carousel: 2–10 cards, all cards must share the same component structure; standard: body required, char limits enforced) and throw a descriptive `Error` on violation.
 
+## Catalog Management
+
+Sync products from your ERP/database into Meta Catalogs linked to a WABA. Covers BM-level catalog CRUD plus product CRUD and bulk batch operations.
+
+> Requires `catalog_management` (and `business_management` for BM-level operations) on your access token.
+
+### Catalogs (BM-level)
+
+```ts
+const owned = await wa.listOwnedCatalogs(BM_ID, { fields: ["id", "name", "product_count"] })
+const shared = await wa.listClientCatalogs(BM_ID)              // catalogs other BMs shared with you
+
+const { id } = await wa.createCatalog(BM_ID, { name: "My Store", vertical: "commerce" })
+const catalog = await wa.getCatalog(id, ["id", "name", "vertical", "product_count"])
+await wa.deleteCatalog(id)
+```
+
+### Products (catalog-level)
+
+```ts
+const { id: productId } = await wa.createProduct(CATALOG_ID, {
+  retailer_id: "sku-001",                              // your SKU — unique per catalog
+  name: "Abridor Inox",
+  description: "Abridor combinado total inox encartelado.",
+  image_url: "https://cdn.example.com/abridor.jpg",
+  price: 690,                                          // integer, smallest currency unit (e.g. 690 = R$ 6,90)
+  currency: "BRL",                                     // ISO 4217
+  availability: "in stock",
+  condition: "new",
+  url: "https://shop.example.com/abridor",             // required by Meta
+})
+
+await wa.updateProduct(productId, { price: 590, availability: "out of stock" })
+
+const product = await wa.getProduct(productId, ["id", "retailer_id", "name", "price", "availability"])
+
+const page = await wa.listProducts(CATALOG_ID, {
+  limit: 50,
+  fields: ["id", "retailer_id", "name", "price"],
+  // after: page.paging.cursors.after  ← cursor-based paging
+})
+
+await wa.deleteProduct(productId)
+```
+
+### Batch (1–5000 ops, async)
+
+For ERP sync, use `batchProducts` to send up to 5000 CREATE/UPDATE/DELETE operations in a single call. Returns handles for status polling.
+
+```ts
+const { handles } = await wa.batchProducts(CATALOG_ID, [
+  { method: "CREATE", retailer_id: "sku-001", data: { /* full ProductCreateInput */ } },
+  { method: "UPDATE", retailer_id: "sku-002", data: { price: 1990 } },
+  { method: "DELETE", retailer_id: "sku-003" },
+], { allowUpsert: true })                              // optional — UPDATE creates if missing
+
+// Poll until done
+const status = await wa.getBatchStatus(CATALOG_ID, handles![0])
+// → { handle, status: "queued" | "in_progress" | "finished" | "errored", errors, warnings, ... }
+```
+
+If the batch payload is malformed, the response contains `validation_status` instead of `handles` — inspect both fields when handling errors.
+
 ## Broadcast
 
 Send templates to thousands of recipients with automatic batching and rate limiting:
@@ -442,7 +505,7 @@ import type {
 } from "@saimonventura/waba"
 ```
 
-## All 83 Methods
+## All 95 Methods
 
 | Category | Methods |
 |---|---|
@@ -457,6 +520,8 @@ import type {
 | **Two-Step** | `setTwoStepPin` `removeTwoStepPin` |
 | **Block** | `blockUser` `unblockUser` |
 | **Commerce** | `getCommerceSettings` `updateCommerceSettings` |
+| **Catalog** | `listOwnedCatalogs` `listClientCatalogs` `createCatalog` `getCatalog` `deleteCatalog` |
+| **Products** | `createProduct` `getProduct` `updateProduct` `deleteProduct` `listProducts` `batchProducts` `getBatchStatus` |
 | **Health** | `getHealthStatus` |
 | **Phone Numbers** | `listPhoneNumbers` |
 | **QR Codes** | `createQR` `listQRCodes` `updateQR` `deleteQR` |

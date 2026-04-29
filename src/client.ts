@@ -9,6 +9,9 @@ import type {
   StandardTemplateCreateInput, CarouselTemplateCreateInput, CarouselCardCreateInput,
   StandardHeaderInput, StandardButtonInput, CarouselCardButtonInput,
   TemplateCreateResponse,
+  Catalog, CatalogCreateInput, CatalogListResponse,
+  Product, ProductCreateInput, ProductUpdateInput, ProductListOptions, ProductListResponse,
+  ProductBatchRequest, ProductBatchResponse, ProductBatchStatus,
 } from "./types.js"
 import { WhatsAppError } from "./errors.js"
 import { verifyWebhook, parseWebhook, validateSignature, parseWebhookWithSignature } from "./webhook.js"
@@ -53,6 +56,9 @@ export class WhatsApp {
     if (options?.body !== undefined) {
       if (options.body instanceof FormData) {
         // Let fetch set content-type for FormData (includes boundary)
+        fetchOptions.body = options.body
+      } else if (options.body instanceof URLSearchParams) {
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
         fetchOptions.body = options.body
       } else {
         headers["Content-Type"] = "application/json"
@@ -701,6 +707,84 @@ export class WhatsApp {
     })
   }
 
+  // ── Catalog Management (BM-level) ──
+
+  async listOwnedCatalogs(businessId: string, opts?: { fields?: string[] }): Promise<CatalogListResponse> {
+    const path = appendQuery(`${businessId}/owned_product_catalogs`, { fields: opts?.fields?.join(",") })
+    return this.request<CatalogListResponse>(path, { method: "GET" })
+  }
+
+  async listClientCatalogs(businessId: string, opts?: { fields?: string[] }): Promise<CatalogListResponse> {
+    const path = appendQuery(`${businessId}/client_product_catalogs`, { fields: opts?.fields?.join(",") })
+    return this.request<CatalogListResponse>(path, { method: "GET" })
+  }
+
+  async createCatalog(businessId: string, input: CatalogCreateInput): Promise<{ id: string }> {
+    return this.request<{ id: string }>(`${businessId}/owned_product_catalogs`, { body: input })
+  }
+
+  async getCatalog(catalogId: string, fields?: string[]): Promise<Catalog> {
+    const path = appendQuery(catalogId, { fields: fields?.join(",") })
+    return this.request<Catalog>(path, { method: "GET" })
+  }
+
+  async deleteCatalog(catalogId: string): Promise<{ success: boolean }> {
+    return this.request(catalogId, { method: "DELETE" })
+  }
+
+  // ── Product Management (catalog-level) ──
+
+  async createProduct(catalogId: string, input: ProductCreateInput): Promise<{ id: string }> {
+    validateProductInput(input, this.validate)
+    return this.request<{ id: string }>(`${catalogId}/products`, { body: input })
+  }
+
+  async getProduct(productId: string, fields?: string[]): Promise<Product> {
+    const path = appendQuery(productId, { fields: fields?.join(",") })
+    return this.request<Product>(path, { method: "GET" })
+  }
+
+  async updateProduct(productId: string, patch: ProductUpdateInput): Promise<{ success: boolean }> {
+    validateProductPatch(patch, this.validate)
+    return this.request(productId, { body: patch })
+  }
+
+  async deleteProduct(productId: string): Promise<{ success: boolean }> {
+    return this.request(productId, { method: "DELETE" })
+  }
+
+  async listProducts(catalogId: string, opts?: ProductListOptions): Promise<ProductListResponse> {
+    const path = appendQuery(`${catalogId}/products`, {
+      fields: opts?.fields?.join(","),
+      limit: opts?.limit?.toString(),
+      after: opts?.after,
+      before: opts?.before,
+      filter: opts?.filter ? JSON.stringify(opts.filter) : undefined,
+    })
+    return this.request<ProductListResponse>(path, { method: "GET" })
+  }
+
+  async batchProducts(
+    catalogId: string,
+    requests: ProductBatchRequest[],
+    opts?: { allowUpsert?: boolean },
+  ): Promise<ProductBatchResponse> {
+    if (requests.length < 1) throw new Error("batch must have at least 1 request")
+    if (requests.length > 5000) throw new Error("batch can have at most 5000 requests")
+
+    const body = new URLSearchParams()
+    body.set("requests", JSON.stringify(requests))
+    if (opts?.allowUpsert) body.set("allow_upsert", "true")
+
+    return this.request<ProductBatchResponse>(`${catalogId}/batch`, { body })
+  }
+
+  async getBatchStatus(catalogId: string, handle: string): Promise<ProductBatchStatus> {
+    const path = appendQuery(`${catalogId}/check_batch_request_status`, { handle })
+    const result = await this.request<{ data: ProductBatchStatus[] }>(path, { method: "GET" })
+    return result.data?.[0] ?? { handle, status: "errored", errors: [{ message: "no status returned" }] }
+  }
+
   // ── Health Status ──
 
   async getHealthStatus(): Promise<HealthStatusResponse> {
@@ -1076,5 +1160,48 @@ function buildCarouselCardButton(b: CarouselCardButtonInput): any {
       const _exhaustive: never = b
       throw new Error(`unsupported carousel card button type: ${JSON.stringify(_exhaustive)}`)
     }
+  }
+}
+
+// ── Catalog/Product Helpers (private to module) ────────────────────────────
+
+function appendQuery(path: string, params: Record<string, string | undefined>): string {
+  const search = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== "") search.set(k, v)
+  }
+  const qs = search.toString()
+  return qs ? `${path}?${qs}` : path
+}
+
+// retailer_id is structural: empty would build an unidentifiable item.
+// Numeric/format checks are gated by the `validate` flag.
+function validateProductInput(input: ProductCreateInput, extended: boolean): void {
+  if (!input.retailer_id || input.retailer_id.length === 0) {
+    throw new Error("product retailer_id is required and cannot be empty")
+  }
+  if (!extended) return
+
+  if (typeof input.price !== "number" || input.price < 0) {
+    throw new Error(`product price must be a non-negative integer (got ${input.price})`)
+  }
+  if (!input.currency || !/^[A-Z]{3}$/.test(input.currency)) {
+    throw new Error(`product currency must be ISO 4217 (3 uppercase letters), got "${input.currency}"`)
+  }
+  if (input.image_url && !/^https?:\/\//.test(input.image_url)) {
+    throw new Error(`product image_url must be http(s), got "${input.image_url}"`)
+  }
+}
+
+function validateProductPatch(patch: ProductUpdateInput, extended: boolean): void {
+  if (!extended) return
+  if (patch.price !== undefined && (typeof patch.price !== "number" || patch.price < 0)) {
+    throw new Error(`product price must be a non-negative integer (got ${patch.price})`)
+  }
+  if (patch.currency !== undefined && !/^[A-Z]{3}$/.test(patch.currency)) {
+    throw new Error(`product currency must be ISO 4217 (3 uppercase letters), got "${patch.currency}"`)
+  }
+  if (patch.image_url !== undefined && !/^https?:\/\//.test(patch.image_url)) {
+    throw new Error(`product image_url must be http(s), got "${patch.image_url}"`)
   }
 }

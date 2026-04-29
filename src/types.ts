@@ -403,6 +403,115 @@ export interface CommerceSettings {
   id?: string
 }
 
+// ── Catalog & Product Management ─────────────────────────────────────────
+
+export type CatalogVertical =
+  | "commerce"
+  | "destinations"
+  | "flights"
+  | "home_listings"
+  | "hotels"
+  | "media_title"
+  | "offline_commerce"
+  | "ticketed_experiences"
+  | "transactable_items"
+  | "vehicles"
+  | (string & {})
+
+export interface Catalog {
+  id: string
+  name: string
+  vertical?: CatalogVertical
+  product_count?: number
+}
+
+export interface CatalogCreateInput {
+  name: string
+  vertical?: CatalogVertical
+}
+
+export interface CatalogListResponse {
+  data: Catalog[]
+  paging?: { cursors?: { before?: string; after?: string }; next?: string; previous?: string }
+}
+
+export type ItemAvailability =
+  | "in stock"
+  | "out of stock"
+  | "preorder"
+  | "available for order"
+  | "discontinued"
+
+export type ItemCondition = "new" | "refurbished" | "used"
+
+// Price is stored as integer in smallest currency unit (e.g. 990 for R$ 9,90 with BRL).
+export interface ProductCreateInput {
+  retailer_id: string
+  name: string
+  description: string
+  image_url: string
+  price: number
+  currency: string
+  availability?: ItemAvailability
+  condition?: ItemCondition
+  url?: string
+  brand?: string
+  category?: string
+  additional_image_urls?: string[]
+  gtin?: string
+  mpn?: string
+  sale_price?: number
+  sale_price_start_date?: string
+  sale_price_end_date?: string
+}
+
+export type ProductUpdateInput = Partial<ProductCreateInput>
+
+export interface Product extends ProductCreateInput {
+  id: string
+  retailer_product_group_id?: string
+  visibility?: "published" | "staging"
+  review_status?: "pending" | "approved" | "rejected" | "outdated"
+}
+
+export interface ProductListOptions {
+  fields?: string[]
+  limit?: number
+  after?: string
+  before?: string
+  filter?: Record<string, unknown>
+}
+
+export interface ProductListResponse {
+  data: Product[]
+  paging?: { cursors?: { before?: string; after?: string }; next?: string; previous?: string }
+}
+
+export type ProductBatchMethod = "CREATE" | "UPDATE" | "DELETE"
+
+export interface ProductBatchRequest {
+  method: ProductBatchMethod
+  retailer_id: string
+  data?: ProductCreateInput | ProductUpdateInput
+}
+
+export interface ProductBatchResponse {
+  handles?: string[]
+  validation_status?: Array<{
+    retailer_id?: string
+    errors: Array<{ message: string }>
+  }>
+}
+
+export interface ProductBatchStatus {
+  handle: string
+  status: "queued" | "in_progress" | "finished" | "errored"
+  errors?: Array<{ message: string; retailer_id?: string; line?: number }>
+  warnings?: Array<{ message: string; id?: string; line?: number }>
+  errors_total_count?: number
+  ids_of_invalid_requests?: number[]
+}
+
 // ── Health Status ────────────────────────────────────────────────────────
 
 export interface HealthStatusEntity {
