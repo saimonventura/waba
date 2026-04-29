@@ -6,10 +6,13 @@ import type {
   CommerceSettings, HealthStatusResponse, PhoneNumberEntry, QRCode, FlowInfo,
   BroadcastResult, OrderDetailsAction, OrderDetailsOptions, OrderStatusAction, OrderStatusOptions,
   StandardTemplateComponent, CarouselCardInput, TemplateParameter,
+  StandardTemplateCreateInput, CarouselTemplateCreateInput, CarouselCardCreateInput,
+  StandardHeaderInput, StandardButtonInput, CarouselCardButtonInput,
+  TemplateCreateResponse,
 } from "./types.js"
 import { WhatsAppError } from "./errors.js"
 import { verifyWebhook, parseWebhook, validateSignature, parseWebhookWithSignature } from "./webhook.js"
-import { validateText, validateButtons, validateList, validateCTA, validateInteractiveBody, validateHeaderFooter } from "./validate.js"
+import { validateText, validateButtons, validateList, validateCTA, validateInteractiveBody, validateHeaderFooter, ValidationError } from "./validate.js"
 import type { VerifyQuery } from "./webhook.js"
 import type { WebhookEvent } from "./types.js"
 
@@ -447,9 +450,9 @@ export class WhatsApp {
     return this.request(path, { method: "GET" })
   }
 
-  async createTemplate(template: TemplateCreateRequest): Promise<any> {
+  async createTemplate(template: TemplateCreateRequest): Promise<TemplateCreateResponse> {
     if (!this.wabaId) throw new Error("wabaId is required for template management")
-    return this.request(`${this.wabaId}/message_templates`, { body: template })
+    return this.request<TemplateCreateResponse>(`${this.wabaId}/message_templates`, { body: template })
   }
 
   async deleteTemplate(name: string): Promise<any> {
@@ -463,6 +466,30 @@ export class WhatsApp {
 
   async updateTemplate(templateId: string, data: TemplateUpdateRequest): Promise<any> {
     return this.request(templateId, { body: data })
+  }
+
+  // ── Template Convenience: Create ──
+
+  async createStandardTemplate(input: StandardTemplateCreateInput): Promise<TemplateCreateResponse> {
+    if (!this.wabaId) throw new Error("wabaId is required for template management")
+    validateStandardTemplateInput(input, this.validate)
+    return this.createTemplate({
+      name: input.name,
+      language: input.language,
+      category: input.category,
+      components: buildStandardTemplateComponents(input),
+    })
+  }
+
+  async createCarouselTemplate(input: CarouselTemplateCreateInput): Promise<TemplateCreateResponse> {
+    if (!this.wabaId) throw new Error("wabaId is required for template management")
+    validateCarouselTemplateInput(input, this.validate)
+    return this.createTemplate({
+      name: input.name,
+      language: input.language,
+      category: "MARKETING",
+      components: buildCarouselTemplateComponents(input),
+    })
   }
 
   // ── Template Convenience: Carousel ──
@@ -891,5 +918,163 @@ export class WhatsApp {
 
   static parseWebhookWithSignature(rawBody: string | Buffer, signature: string, appSecret: string): WebhookEvent[] {
     return parseWebhookWithSignature(rawBody, signature, appSecret)
+  }
+}
+
+// ── Template Build Helpers (private to module) ─────────────────────────────
+
+// Structural checks always run (would produce malformed JSON otherwise);
+// char-limit checks only when `extended` is true (gated by client's `validate` flag).
+function validateStandardTemplateInput(input: StandardTemplateCreateInput, extended: boolean): void {
+  if (!input.body || !input.body.text || input.body.text.length === 0) {
+    throw new ValidationError("template body is required and cannot be empty", "body", 0)
+  }
+  if (!extended) return
+
+  if (input.body.text.length > 1024) {
+    throw new ValidationError(`template body exceeds 1024 chars (got ${input.body.text.length})`, "body", 1024)
+  }
+  if (input.header?.type === "text" && input.header.text.length > 60) {
+    throw new ValidationError(`text header exceeds 60 chars (got ${input.header.text.length})`, "header.text", 60)
+  }
+  if (input.footer && input.footer.length > 60) {
+    throw new ValidationError(`footer exceeds 60 chars (got ${input.footer.length})`, "footer", 60)
+  }
+}
+
+function buildStandardTemplateComponents(input: StandardTemplateCreateInput): any[] {
+  const components: any[] = []
+  if (input.header) components.push(buildHeaderComponent(input.header))
+  components.push(buildBodyComponent(input.body))
+  if (input.footer) components.push({ type: "footer", text: input.footer })
+  if (input.buttons && input.buttons.length > 0) {
+    components.push({ type: "buttons", buttons: input.buttons.map(buildStandardButton) })
+  }
+  return components
+}
+
+function buildHeaderComponent(h: StandardHeaderInput): any {
+  switch (h.type) {
+    case "text": {
+      const c: any = { type: "header", format: "text", text: h.text }
+      if (h.example !== undefined) c.example = { header_text: [h.example] }
+      return c
+    }
+    case "image":
+    case "video":
+    case "document":
+      return { type: "header", format: h.type, example: { header_handle: [h.handle] } }
+    default: {
+      const _exhaustive: never = h
+      throw new Error(`unsupported header type: ${JSON.stringify(_exhaustive)}`)
+    }
+  }
+}
+
+function buildBodyComponent(b: { text: string; example?: string[] }): any {
+  const c: any = { type: "body", text: b.text }
+  if (b.example && b.example.length > 0) c.example = { body_text: [b.example] }
+  return c
+}
+
+function buildStandardButton(b: StandardButtonInput): any {
+  switch (b.type) {
+    case "url": {
+      const out: any = { type: "url", text: b.text, url: b.url }
+      if (b.example !== undefined) out.example = [b.example]
+      return out
+    }
+    case "phone_number":
+      return { type: "phone_number", text: b.text, phone_number: b.phone_number }
+    case "quick_reply":
+      return { type: "quick_reply", text: b.text }
+    case "copy_code":
+      return { type: "copy_code", example: b.example }
+    default: {
+      const _exhaustive: never = b
+      throw new Error(`unsupported standard button type: ${JSON.stringify(_exhaustive)}`)
+    }
+  }
+}
+
+function validateCarouselTemplateInput(input: CarouselTemplateCreateInput, extended: boolean): void {
+  if (input.cards.length < 2) {
+    throw new ValidationError(`carousel must have at least 2 cards (got ${input.cards.length})`, "cards", 2)
+  }
+  if (input.cards.length > 10) {
+    throw new ValidationError(`carousel can have at most 10 cards (got ${input.cards.length})`, "cards", 10)
+  }
+  if (!input.body || !input.body.text || input.body.text.length === 0) {
+    throw new ValidationError("carousel body text is required and cannot be empty", "body", 0)
+  }
+
+  const ref = input.cards[0]
+  for (let i = 1; i < input.cards.length; i++) {
+    if (!sameCardStructure(ref, input.cards[i])) {
+      throw new ValidationError(`all cards must have the same components (mismatch at card ${i})`, "cards", i)
+    }
+  }
+
+  if (!extended) return
+
+  if (input.body.text.length > 1024) {
+    throw new ValidationError(`carousel body exceeds 1024 chars (got ${input.body.text.length})`, "body", 1024)
+  }
+  for (let i = 0; i < input.cards.length; i++) {
+    const card = input.cards[i]
+    if (card.body && card.body.text.length > 160) {
+      throw new ValidationError(`card[${i}] body exceeds 160 chars (got ${card.body.text.length})`, "card.body", 160)
+    }
+  }
+}
+
+function sameCardStructure(a: CarouselCardCreateInput, b: CarouselCardCreateInput): boolean {
+  if (a.header.format !== b.header.format) return false
+  if (Boolean(a.body) !== Boolean(b.body)) return false
+  const aBtns = a.buttons || []
+  const bBtns = b.buttons || []
+  if (aBtns.length !== bBtns.length) return false
+  for (let i = 0; i < aBtns.length; i++) {
+    if (aBtns[i].type !== bBtns[i].type) return false
+  }
+  return true
+}
+
+function buildCarouselTemplateComponents(input: CarouselTemplateCreateInput): any[] {
+  return [
+    buildBodyComponent(input.body),
+    {
+      type: "carousel",
+      cards: input.cards.map(card => ({ components: buildCarouselCardComponents(card) })),
+    },
+  ]
+}
+
+function buildCarouselCardComponents(card: CarouselCardCreateInput): any[] {
+  const comps: any[] = [
+    { type: "header", format: card.header.format, example: { header_handle: [card.header.handle] } },
+  ]
+  if (card.body) comps.push(buildBodyComponent(card.body))
+  if (card.buttons && card.buttons.length > 0) {
+    comps.push({ type: "buttons", buttons: card.buttons.map(buildCarouselCardButton) })
+  }
+  return comps
+}
+
+function buildCarouselCardButton(b: CarouselCardButtonInput): any {
+  switch (b.type) {
+    case "url": {
+      const out: any = { type: "url", text: b.text, url: b.url }
+      if (b.example !== undefined) out.example = [b.example]
+      return out
+    }
+    case "phone_number":
+      return { type: "phone_number", text: b.text, phone_number: b.phone_number }
+    case "quick_reply":
+      return { type: "quick_reply", text: b.text }
+    default: {
+      const _exhaustive: never = b
+      throw new Error(`unsupported carousel card button type: ${JSON.stringify(_exhaustive)}`)
+    }
   }
 }

@@ -285,16 +285,74 @@ export interface CarouselCardButton {
   parameters: TemplateParameter[]
 }
 
+export type TemplateCategory = "MARKETING" | "UTILITY" | "AUTHENTICATION"
+
+export type TemplateStatus = "PENDING" | "APPROVED" | "REJECTED" | "PAUSED" | "DISABLED" | "IN_APPEAL"
+
+export interface TemplateCreateResponse {
+  id: string
+  status: TemplateStatus
+  category: TemplateCategory
+}
+
 export interface TemplateCreateRequest {
   name: string;
-  category: "MARKETING" | "UTILITY" | "AUTHENTICATION";
+  category: TemplateCategory;
   language: string;
   components: any[];
 }
 
 export interface TemplateUpdateRequest {
   components?: any[]
-  category?: "MARKETING" | "UTILITY" | "AUTHENTICATION"
+  category?: TemplateCategory
+}
+
+// ── Template Creation Helpers (typed inputs for create*) ─────────────────────
+// Auth templates have a different payload shape — use sendAuthTemplate / a future
+// createAuthTemplate helper, not these inputs.
+
+export type StandardHeaderInput =
+  | { type: "text"; text: string; example?: string }
+  | { type: "image"; handle: string }
+  | { type: "video"; handle: string }
+  | { type: "document"; handle: string }
+
+export type StandardButtonInput =
+  | { type: "quick_reply"; text: string }
+  | { type: "url"; text: string; url: string; example?: string }
+  | { type: "phone_number"; text: string; phone_number: string }
+  | { type: "copy_code"; example: string }
+
+export interface StandardTemplateCreateInput {
+  name: string
+  language: string
+  category: "MARKETING" | "UTILITY"
+  header?: StandardHeaderInput
+  body: { text: string; example?: string[] }
+  footer?: string
+  buttons?: StandardButtonInput[]
+}
+
+export type CarouselCardHeaderInput =
+  | { format: "image"; handle: string }
+  | { format: "video"; handle: string }
+
+export type CarouselCardButtonInput =
+  | { type: "quick_reply"; text: string }
+  | { type: "url"; text: string; url: string; example?: string }
+  | { type: "phone_number"; text: string; phone_number: string }
+
+export interface CarouselCardCreateInput {
+  header: CarouselCardHeaderInput
+  body?: { text: string; example?: string[] }
+  buttons?: CarouselCardButtonInput[]
+}
+
+export interface CarouselTemplateCreateInput {
+  name: string
+  language: string
+  body: { text: string; example?: string[] }
+  cards: CarouselCardCreateInput[]
 }
 
 // ── Media Results ───────────────────────────────────────────────────────────
