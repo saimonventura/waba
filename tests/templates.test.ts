@@ -702,6 +702,32 @@ describe("Templates", () => {
     })).resolves.toBeDefined()
   })
 
+  it("should accept standard template with text header exactly 60 chars (boundary)", async () => {
+    mockFetch(CREATE_OK)
+    const client = createValidatingClient()
+
+    await expect(client.createStandardTemplate({
+      name: "edge_header",
+      language: "pt_BR",
+      category: "MARKETING",
+      header: { type: "text", text: "x".repeat(60) },
+      body: { text: "ok" },
+    })).resolves.toBeDefined()
+  })
+
+  it("should accept standard template with footer exactly 60 chars (boundary)", async () => {
+    mockFetch(CREATE_OK)
+    const client = createValidatingClient()
+
+    await expect(client.createStandardTemplate({
+      name: "edge_footer",
+      language: "pt_BR",
+      category: "MARKETING",
+      body: { text: "ok" },
+      footer: "x".repeat(60),
+    })).resolves.toBeDefined()
+  })
+
   it("should reject standard template with text header over 60 chars (validate: true)", async () => {
     mockFetch(CREATE_OK)
     const client = createValidatingClient()
@@ -824,6 +850,36 @@ describe("Templates", () => {
         { header: { format: "image", handle: "h2" }, body: { text: "ok" } },
       ],
     })).rejects.toThrow(/160/)
+  })
+
+  it("should accept carousel with body exactly 1024 chars (boundary)", async () => {
+    mockFetch(CREATE_OK)
+    const client = createValidatingClient()
+
+    await expect(client.createCarouselTemplate({
+      name: "edge_body",
+      language: "pt_BR",
+      body: { text: "x".repeat(1024) },
+      cards: [
+        { header: { format: "image", handle: "h1" } },
+        { header: { format: "image", handle: "h2" } },
+      ],
+    })).resolves.toBeDefined()
+  })
+
+  it("should accept carousel with card body exactly 160 chars (boundary)", async () => {
+    mockFetch(CREATE_OK)
+    const client = createValidatingClient()
+
+    await expect(client.createCarouselTemplate({
+      name: "edge_card_body",
+      language: "pt_BR",
+      body: { text: "ok" },
+      cards: [
+        { header: { format: "image", handle: "h1" }, body: { text: "x".repeat(160) } },
+        { header: { format: "image", handle: "h2" }, body: { text: "x".repeat(160) } },
+      ],
+    })).resolves.toBeDefined()
   })
 
   it("should accept carousel with exactly 2 cards (lower boundary)", async () => {

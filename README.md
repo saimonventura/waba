@@ -1,6 +1,6 @@
 # @saimonventura/waba
 
-[![npm](https://img.shields.io/npm/v/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![downloads](https://img.shields.io/npm/dm/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![license](https://img.shields.io/npm/l/@saimonventura/waba)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/) [![tests](https://img.shields.io/badge/tests-214%20passing-brightgreen)]() [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen)]() [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![npm](https://img.shields.io/npm/v/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![downloads](https://img.shields.io/npm/dm/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![license](https://img.shields.io/npm/l/@saimonventura/waba)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/) [![tests](https://img.shields.io/badge/tests-218%20passing-brightgreen)]() [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen)]() [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 **The complete WhatsApp Cloud API SDK for TypeScript.** Zero dependencies. 83 methods. Every API surface covered.
 
@@ -53,8 +53,15 @@ const wa = new WhatsApp({
   accessToken: "YOUR_ACCESS_TOKEN",
   wabaId: "YOUR_WABA_ID",   // needed for templates, analytics, flows
   apiVersion: "v25.0",      // optional, defaults to v25.0
+  validate: true,           // optional, defaults to false — see "Input validation" below
 })
 ```
+
+### Input validation
+
+The `validate` flag (default `false`) enables client-side checks against Meta's published character limits before sending. With `validate: true`, the SDK throws a `ValidationError` (with `field` and `limit` properties) for over-limit text/header/footer/button content and template char-limit overflows. Without it, the SDK is a thin pass-through and Meta will reject the call server-side instead.
+
+Structural checks (e.g. carousel must have 2–10 cards, all cards must share the same component structure, body is required) **always** run regardless of the flag — they prevent malformed JSON from being sent at all.
 
 ## Messaging
 

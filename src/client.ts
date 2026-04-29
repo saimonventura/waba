@@ -450,9 +450,9 @@ export class WhatsApp {
     return this.request(path, { method: "GET" })
   }
 
-  async createTemplate(template: TemplateCreateRequest): Promise<any> {
+  async createTemplate(template: TemplateCreateRequest): Promise<TemplateCreateResponse> {
     if (!this.wabaId) throw new Error("wabaId is required for template management")
-    return this.request(`${this.wabaId}/message_templates`, { body: template })
+    return this.request<TemplateCreateResponse>(`${this.wabaId}/message_templates`, { body: template })
   }
 
   async deleteTemplate(name: string): Promise<any> {
@@ -478,7 +478,7 @@ export class WhatsApp {
       language: input.language,
       category: input.category,
       components: buildStandardTemplateComponents(input),
-    }) as Promise<TemplateCreateResponse>
+    })
   }
 
   async createCarouselTemplate(input: CarouselTemplateCreateInput): Promise<TemplateCreateResponse> {
@@ -489,7 +489,7 @@ export class WhatsApp {
       language: input.language,
       category: "MARKETING",
       components: buildCarouselTemplateComponents(input),
-    }) as Promise<TemplateCreateResponse>
+    })
   }
 
   // ── Template Convenience: Carousel ──
