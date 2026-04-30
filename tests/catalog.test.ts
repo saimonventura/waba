@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { WhatsApp } from "../src/client.js"
+import { ValidationError } from "../src/validate.js"
+import { WhatsAppError } from "../src/errors.js"
 
 const PHONE_ID = "123456789"
 const TOKEN = "test-token"
@@ -44,6 +46,10 @@ function parseFetchFormBody(mock: ReturnType<typeof vi.fn>): URLSearchParams {
 
 function parseFetchMethod(mock: ReturnType<typeof vi.fn>): string {
   return mock.mock.calls[0][1]?.method ?? "POST"
+}
+
+function parseFetchHeaders(mock: ReturnType<typeof vi.fn>): Record<string, string> {
+  return mock.mock.calls[0][1]?.headers ?? {}
 }
 
 describe("Catalog & Product Management", () => {
@@ -222,6 +228,7 @@ describe("Catalog & Product Management", () => {
           image_url: "https://cdn.example.com/1.jpg",
           price: 690,
           currency: "BRL",
+          url: "https://shop.example.com/abridor",
         },
       },
       {
@@ -293,7 +300,7 @@ describe("Catalog & Product Management", () => {
 
   // ── Validation (gated by validate flag) ──
 
-  it("should reject createProduct with empty retailer_id (always)", async () => {
+  it("should reject createProduct with empty retailer_id (always — structural)", async () => {
     mockFetch({ id: PRODUCT_ID })
     const client = createClient()
 
@@ -304,7 +311,38 @@ describe("Catalog & Product Management", () => {
       image_url: "https://x.com/i.jpg",
       price: 100,
       currency: "BRL",
+      url: "https://shop.example.com",
     })).rejects.toThrow(/retailer_id/)
+  })
+
+  it("should reject createProduct with empty retailer_id even when validate: true (structural runs in both)", async () => {
+    mockFetch({ id: PRODUCT_ID })
+    const client = new WhatsApp({ phoneNumberId: PHONE_ID, accessToken: TOKEN, wabaId: WABA_ID, validate: true })
+
+    await expect(client.createProduct(CATALOG_ID, {
+      retailer_id: "",
+      name: "X",
+      description: "x",
+      image_url: "https://x.com/i.jpg",
+      price: 100,
+      currency: "BRL",
+      url: "https://shop.example.com",
+    })).rejects.toThrow(/retailer_id/)
+  })
+
+  it("should reject createProduct with empty url (always — structural, Meta requires it)", async () => {
+    mockFetch({ id: PRODUCT_ID })
+    const client = createClient()
+
+    await expect(client.createProduct(CATALOG_ID, {
+      retailer_id: "sku-001",
+      name: "X",
+      description: "x",
+      image_url: "https://x.com/i.jpg",
+      price: 100,
+      currency: "BRL",
+      url: "",
+    })).rejects.toThrow(/url/)
   })
 
   it("should reject createProduct with negative price (validate: true)", async () => {
@@ -318,10 +356,26 @@ describe("Catalog & Product Management", () => {
       image_url: "https://x.com/i.jpg",
       price: -10,
       currency: "BRL",
+      url: "https://shop.example.com",
     })).rejects.toThrow(/price/)
   })
 
-  it("should skip validation when validate flag is off", async () => {
+  it("should reject createProduct with non-ISO currency (validate: true)", async () => {
+    mockFetch({ id: PRODUCT_ID })
+    const client = new WhatsApp({ phoneNumberId: PHONE_ID, accessToken: TOKEN, wabaId: WABA_ID, validate: true })
+
+    await expect(client.createProduct(CATALOG_ID, {
+      retailer_id: "sku-001",
+      name: "X",
+      description: "x",
+      image_url: "https://x.com/i.jpg",
+      price: 100,
+      currency: "brl",
+      url: "https://shop.example.com",
+    })).rejects.toThrow(/currency/)
+  })
+
+  it("should skip soft-limit validation when validate flag is off", async () => {
     mockFetch({ id: PRODUCT_ID })
     const client = createClient()
 
@@ -331,7 +385,125 @@ describe("Catalog & Product Management", () => {
       description: "x",
       image_url: "https://x.com/i.jpg",
       price: -10,
-      currency: "BRL",
+      currency: "brl",
+      url: "https://shop.example.com",
     })).resolves.toBeDefined()
+  })
+
+  // ── ValidationError instance ──
+
+  it("should throw ValidationError instance (not raw Error) on validation failure", async () => {
+    mockFetch({ id: PRODUCT_ID })
+    const client = createClient()
+
+    await expect(client.createProduct(CATALOG_ID, {
+      retailer_id: "",
+      name: "X",
+      description: "x",
+      image_url: "https://x.com/i.jpg",
+      price: 100,
+      currency: "BRL",
+      url: "https://shop.example.com",
+    })).rejects.toBeInstanceOf(ValidationError)
+  })
+
+  // ── updateProduct (validateProductPatch) coverage ──
+
+  it("should reject updateProduct with negative price (validate: true)", async () => {
+    mockFetch({ success: true })
+    const client = new WhatsApp({ phoneNumberId: PHONE_ID, accessToken: TOKEN, wabaId: WABA_ID, validate: true })
+
+    await expect(client.updateProduct(PRODUCT_ID, { price: -50 })).rejects.toThrow(/price/)
+  })
+
+  it("should reject updateProduct with non-ISO currency (validate: true)", async () => {
+    mockFetch({ success: true })
+    const client = new WhatsApp({ phoneNumberId: PHONE_ID, accessToken: TOKEN, wabaId: WABA_ID, validate: true })
+
+    await expect(client.updateProduct(PRODUCT_ID, { currency: "USDX" })).rejects.toThrow(/currency/)
+  })
+
+  it("should reject updateProduct with non-http image_url (validate: true)", async () => {
+    mockFetch({ success: true })
+    const client = new WhatsApp({ phoneNumberId: PHONE_ID, accessToken: TOKEN, wabaId: WABA_ID, validate: true })
+
+    await expect(client.updateProduct(PRODUCT_ID, { image_url: "ftp://x.com/i.jpg" })).rejects.toThrow(/image_url/)
+  })
+
+  it("should pass updateProduct with name only (validate: true, no-op for unrelated fields)", async () => {
+    mockFetch({ success: true })
+    const client = new WhatsApp({ phoneNumberId: PHONE_ID, accessToken: TOKEN, wabaId: WABA_ID, validate: true })
+
+    await expect(client.updateProduct(PRODUCT_ID, { name: "Renamed" })).resolves.toBeDefined()
+  })
+
+  // ── batchProducts: validation_status surface ──
+
+  it("should throw WhatsAppError when batch returns validation_status (no handles)", async () => {
+    mockFetch({
+      validation_status: [
+        { retailer_id: "sku-001", errors: [{ message: "invalid image_url" }] },
+      ],
+    })
+    const client = createClient()
+
+    await expect(client.batchProducts(CATALOG_ID, [
+      { method: "CREATE", retailer_id: "sku-001", data: {
+        retailer_id: "sku-001", name: "x", description: "x",
+        image_url: "https://x.com/i.jpg", price: 100, currency: "BRL", url: "https://x.com",
+      }},
+    ])).rejects.toBeInstanceOf(WhatsAppError)
+  })
+
+  it("should NOT throw when batch returns validation_status without errors (treat as success)", async () => {
+    const response = { handles: ["h1"], validation_status: [{ retailer_id: "sku-001", errors: [] }] }
+    mockFetch(response)
+    const client = createClient()
+
+    const result = await client.batchProducts(CATALOG_ID, [
+      { method: "DELETE", retailer_id: "sku-001" },
+    ])
+    expect(result).toEqual(response)
+  })
+
+  // ── getBatchStatus: empty data handling ──
+
+  it("should throw WhatsAppError when getBatchStatus returns empty data", async () => {
+    mockFetch({ data: [] })
+    const client = createClient()
+
+    await expect(client.getBatchStatus(CATALOG_ID, "unknown-handle")).rejects.toBeInstanceOf(WhatsAppError)
+  })
+
+  it("should throw WhatsAppError when getBatchStatus returns no data field", async () => {
+    mockFetch({})
+    const client = createClient()
+
+    await expect(client.getBatchStatus(CATALOG_ID, "stale-handle")).rejects.toBeInstanceOf(WhatsAppError)
+  })
+
+  // ── URLSearchParams body sets correct Content-Type ──
+
+  it("should set Content-Type: application/x-www-form-urlencoded for batch (URLSearchParams body)", async () => {
+    const mock = mockFetch({ handles: ["h1"] })
+    const client = createClient()
+
+    await client.batchProducts(CATALOG_ID, [
+      { method: "DELETE", retailer_id: "sku-001" },
+    ])
+
+    expect(parseFetchHeaders(mock)["Content-Type"]).toBe("application/x-www-form-urlencoded")
+  })
+
+  it("should NOT set allow_upsert in batch body when option is omitted", async () => {
+    const mock = mockFetch({ handles: ["h1"] })
+    const client = createClient()
+
+    await client.batchProducts(CATALOG_ID, [
+      { method: "DELETE", retailer_id: "sku-001" },
+    ])
+
+    const body = parseFetchFormBody(mock)
+    expect(body.get("allow_upsert")).toBeNull()
   })
 })

@@ -1,6 +1,6 @@
 # @saimonventura/waba
 
-[![npm](https://img.shields.io/npm/v/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![downloads](https://img.shields.io/npm/dm/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![license](https://img.shields.io/npm/l/@saimonventura/waba)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/) [![tests](https://img.shields.io/badge/tests-237%20passing-brightgreen)]() [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen)]() [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![npm](https://img.shields.io/npm/v/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![downloads](https://img.shields.io/npm/dm/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![license](https://img.shields.io/npm/l/@saimonventura/waba)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/) [![tests](https://img.shields.io/badge/tests-251%20passing-brightgreen)]() [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen)]() [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 **The complete WhatsApp Cloud API SDK for TypeScript.** Zero dependencies. 95 methods. Every API surface covered.
 
@@ -298,21 +298,24 @@ await wa.deleteProduct(productId)
 
 ### Batch (1–5000 ops, async)
 
-For ERP sync, use `batchProducts` to send up to 5000 CREATE/UPDATE/DELETE operations in a single call. Returns handles for status polling.
+For ERP sync, use `batchProducts` to send up to 5000 CREATE/UPDATE/DELETE operations in a single call. The discriminated `ProductBatchRequest` enforces the right shape per method (CREATE requires full data, UPDATE takes a partial, DELETE takes only `retailer_id`).
 
 ```ts
-const { handles } = await wa.batchProducts(CATALOG_ID, [
+const result = await wa.batchProducts(CATALOG_ID, [
   { method: "CREATE", retailer_id: "sku-001", data: { /* full ProductCreateInput */ } },
   { method: "UPDATE", retailer_id: "sku-002", data: { price: 1990 } },
   { method: "DELETE", retailer_id: "sku-003" },
 ], { allowUpsert: true })                              // optional — UPDATE creates if missing
 
-// Poll until done
-const status = await wa.getBatchStatus(CATALOG_ID, handles![0])
-// → { handle, status: "queued" | "in_progress" | "finished" | "errored", errors, warnings, ... }
+// `result.handles` is populated only when Meta accepted the payload.
+const handles = result.handles ?? []
+if (handles.length > 0) {
+  const status = await wa.getBatchStatus(CATALOG_ID, handles[0])
+  // → { handle, status: "queued" | "started" | "in_progress" | "finished" | "errored", ... }
+}
 ```
 
-If the batch payload is malformed, the response contains `validation_status` instead of `handles` — inspect both fields when handling errors.
+**Error handling** — when Meta rejects the payload (validation pre-queue), the SDK throws a `WhatsAppError` with `title: "batch_validation_failed"` and `details` containing the per-item errors. When `getBatchStatus` is called with an unknown/expired handle (Meta returns empty `data`), it throws with `title: "empty_batch_status"` so callers can distinguish that from a batch that genuinely errored.
 
 ## Broadcast
 

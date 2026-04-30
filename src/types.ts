@@ -441,10 +441,13 @@ export type ItemAvailability =
   | "preorder"
   | "available for order"
   | "discontinued"
+  | (string & {})
 
-export type ItemCondition = "new" | "refurbished" | "used"
+export type ItemCondition = "new" | "refurbished" | "used" | "cpo" | (string & {})
 
-// Price is stored as integer in smallest currency unit (e.g. 990 for R$ 9,90 with BRL).
+// `price` and `sale_price` are integers in the smallest currency unit
+// (e.g. 990 for R$ 9,90 with BRL = 990 cents). The Meta GET response, however,
+// returns `price` as a localized formatted STRING (e.g. "R$14,90") — see Product below.
 export interface ProductCreateInput {
   retailer_id: string
   name: string
@@ -452,9 +455,9 @@ export interface ProductCreateInput {
   image_url: string
   price: number
   currency: string
+  url: string                                          // required by Meta
   availability?: ItemAvailability
   condition?: ItemCondition
-  url?: string
   brand?: string
   category?: string
   additional_image_urls?: string[]
@@ -465,10 +468,31 @@ export interface ProductCreateInput {
   sale_price_end_date?: string
 }
 
-export type ProductUpdateInput = Partial<ProductCreateInput>
+// `retailer_id` is the path key (immutable) and is not patchable through this endpoint.
+export type ProductUpdateInput = Partial<Omit<ProductCreateInput, "retailer_id">>
 
-export interface Product extends ProductCreateInput {
+// Distinct from `ProductCreateInput`: Meta's GET returns `price` as a formatted string
+// like "R$14,90". Do not perform arithmetic on `Product.price` — fetch the raw integer
+// via the `price_amount` field if needed (use `getProduct(id, ["price_amount"])`).
+export interface Product {
   id: string
+  retailer_id: string
+  name?: string
+  description?: string
+  image_url?: string
+  price?: string
+  currency?: string
+  url?: string
+  availability?: ItemAvailability
+  condition?: ItemCondition
+  brand?: string
+  category?: string
+  additional_image_urls?: string[]
+  gtin?: string
+  mpn?: string
+  sale_price?: string
+  sale_price_start_date?: string
+  sale_price_end_date?: string
   retailer_product_group_id?: string
   visibility?: "published" | "staging"
   review_status?: "pending" | "approved" | "rejected" | "outdated"
@@ -489,11 +513,12 @@ export interface ProductListResponse {
 
 export type ProductBatchMethod = "CREATE" | "UPDATE" | "DELETE"
 
-export interface ProductBatchRequest {
-  method: ProductBatchMethod
-  retailer_id: string
-  data?: ProductCreateInput | ProductUpdateInput
-}
+// Discriminated by `method`: CREATE requires full data, UPDATE takes a partial,
+// DELETE takes nothing besides the retailer_id.
+export type ProductBatchRequest =
+  | { method: "CREATE"; retailer_id: string; data: ProductCreateInput }
+  | { method: "UPDATE"; retailer_id: string; data: ProductUpdateInput }
+  | { method: "DELETE"; retailer_id: string }
 
 export interface ProductBatchResponse {
   handles?: string[]
@@ -503,9 +528,20 @@ export interface ProductBatchResponse {
   }>
 }
 
+// Meta has been observed to return "started" for queued-but-running batches even
+// though the public docs list "queued" / "in_progress". Both surface here so
+// `switch`-exhaustiveness on `status` keeps working for new variants.
+export type ProductBatchStatusValue =
+  | "queued"
+  | "started"
+  | "in_progress"
+  | "finished"
+  | "errored"
+  | (string & {})
+
 export interface ProductBatchStatus {
   handle: string
-  status: "queued" | "in_progress" | "finished" | "errored"
+  status: ProductBatchStatusValue
   errors?: Array<{ message: string; retailer_id?: string; line?: number }>
   warnings?: Array<{ message: string; id?: string; line?: number }>
   errors_total_count?: number

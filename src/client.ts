@@ -764,25 +764,57 @@ export class WhatsApp {
     return this.request<ProductListResponse>(path, { method: "GET" })
   }
 
+  // Meta v25: the legacy `/batch` endpoint with form-urlencoded `requests=<JSON>`
+  // is the only working shape. The newer documented `/items_batch` endpoint
+  // returns "Can not find required field id" for every payload variant tested
+  // (verified end-to-end against catalog 2826724194252749 in 2026-04). Revisit
+  // when Meta deprecates `/batch` or fixes `/items_batch`.
   async batchProducts(
     catalogId: string,
     requests: ProductBatchRequest[],
     opts?: { allowUpsert?: boolean },
   ): Promise<ProductBatchResponse> {
-    if (requests.length < 1) throw new Error("batch must have at least 1 request")
-    if (requests.length > 5000) throw new Error("batch can have at most 5000 requests")
+    if (requests.length < 1) {
+      throw new ValidationError(`batch must have at least 1 request (got ${requests.length})`, "requests", 1)
+    }
+    if (requests.length > 5000) {
+      throw new ValidationError(`batch can have at most 5000 requests (got ${requests.length})`, "requests", 5000)
+    }
 
     const body = new URLSearchParams()
     body.set("requests", JSON.stringify(requests))
     if (opts?.allowUpsert) body.set("allow_upsert", "true")
 
-    return this.request<ProductBatchResponse>(`${catalogId}/batch`, { body })
+    const result = await this.request<ProductBatchResponse>(`${catalogId}/batch`, { body })
+
+    // Meta returns HTTP 200 with `validation_status` when the payload itself is
+    // rejected (no `handles` produced). Surface this as an error so callers don't
+    // silently believe the batch was queued.
+    if (!result.handles && result.validation_status?.some(v => v.errors?.length)) {
+      const detail = JSON.stringify(result.validation_status)
+      throw new WhatsAppError({
+        message: `batch validation failed: ${result.validation_status.length} item(s) rejected`,
+        code: 0,
+        title: "batch_validation_failed",
+        httpStatus: 200,
+        details: detail,
+      })
+    }
+    return result
   }
 
   async getBatchStatus(catalogId: string, handle: string): Promise<ProductBatchStatus> {
     const path = appendQuery(`${catalogId}/check_batch_request_status`, { handle })
     const result = await this.request<{ data: ProductBatchStatus[] }>(path, { method: "GET" })
-    return result.data?.[0] ?? { handle, status: "errored", errors: [{ message: "no status returned" }] }
+    if (!result.data || result.data.length === 0) {
+      throw new WhatsAppError({
+        message: `no batch status returned for handle "${handle}" (handle may be invalid or expired)`,
+        code: 0,
+        title: "empty_batch_status",
+        httpStatus: 200,
+      })
+    }
+    return result.data[0]
   }
 
   // ── Health Status ──
@@ -1174,34 +1206,44 @@ function appendQuery(path: string, params: Record<string, string | undefined>): 
   return qs ? `${path}?${qs}` : path
 }
 
-// retailer_id is structural: empty would build an unidentifiable item.
-// Numeric/format checks are gated by the `validate` flag.
+// `retailer_id` and `url` are structural: empty would build an unidentifiable
+// item or one Meta will reject as missing the destination URL. Numeric/format
+// checks are gated by the `validate` flag.
 function validateProductInput(input: ProductCreateInput, extended: boolean): void {
-  if (!input.retailer_id || input.retailer_id.length === 0) {
-    throw new Error("product retailer_id is required and cannot be empty")
+  if (!input.retailer_id) {
+    throw new ValidationError("product retailer_id is required and cannot be empty", "retailer_id", 0)
+  }
+  if (!input.url) {
+    throw new ValidationError("product url is required and cannot be empty", "url", 0)
   }
   if (!extended) return
 
   if (typeof input.price !== "number" || input.price < 0) {
-    throw new Error(`product price must be a non-negative integer (got ${input.price})`)
+    throw new ValidationError(`product price must be a non-negative integer (got ${input.price})`, "price", 0)
   }
   if (!input.currency || !/^[A-Z]{3}$/.test(input.currency)) {
-    throw new Error(`product currency must be ISO 4217 (3 uppercase letters), got "${input.currency}"`)
+    throw new ValidationError(`product currency must be ISO 4217 (3 uppercase letters), got "${input.currency}"`, "currency", 3)
   }
   if (input.image_url && !/^https?:\/\//.test(input.image_url)) {
-    throw new Error(`product image_url must be http(s), got "${input.image_url}"`)
+    throw new ValidationError(`product image_url must be http(s), got "${input.image_url}"`, "image_url", 0)
+  }
+  if (input.url && !/^https?:\/\//.test(input.url)) {
+    throw new ValidationError(`product url must be http(s), got "${input.url}"`, "url", 0)
   }
 }
 
 function validateProductPatch(patch: ProductUpdateInput, extended: boolean): void {
   if (!extended) return
   if (patch.price !== undefined && (typeof patch.price !== "number" || patch.price < 0)) {
-    throw new Error(`product price must be a non-negative integer (got ${patch.price})`)
+    throw new ValidationError(`product price must be a non-negative integer (got ${patch.price})`, "price", 0)
   }
   if (patch.currency !== undefined && !/^[A-Z]{3}$/.test(patch.currency)) {
-    throw new Error(`product currency must be ISO 4217 (3 uppercase letters), got "${patch.currency}"`)
+    throw new ValidationError(`product currency must be ISO 4217 (3 uppercase letters), got "${patch.currency}"`, "currency", 3)
   }
   if (patch.image_url !== undefined && !/^https?:\/\//.test(patch.image_url)) {
-    throw new Error(`product image_url must be http(s), got "${patch.image_url}"`)
+    throw new ValidationError(`product image_url must be http(s), got "${patch.image_url}"`, "image_url", 0)
+  }
+  if (patch.url !== undefined && !/^https?:\/\//.test(patch.url)) {
+    throw new ValidationError(`product url must be http(s), got "${patch.url}"`, "url", 0)
   }
 }
