@@ -9,6 +9,9 @@ import type {
   StandardTemplateCreateInput, CarouselTemplateCreateInput, CarouselCardCreateInput,
   StandardHeaderInput, StandardButtonInput, CarouselCardButtonInput,
   TemplateCreateResponse,
+  Catalog, CatalogCreateInput, CatalogListResponse,
+  Product, ProductCreateInput, ProductUpdateInput, ProductListOptions, ProductListResponse,
+  ProductBatchRequest, ProductBatchResponse, ProductBatchStatus,
 } from "./types.js"
 import { WhatsAppError } from "./errors.js"
 import { verifyWebhook, parseWebhook, validateSignature, parseWebhookWithSignature } from "./webhook.js"
@@ -53,6 +56,9 @@ export class WhatsApp {
     if (options?.body !== undefined) {
       if (options.body instanceof FormData) {
         // Let fetch set content-type for FormData (includes boundary)
+        fetchOptions.body = options.body
+      } else if (options.body instanceof URLSearchParams) {
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
         fetchOptions.body = options.body
       } else {
         headers["Content-Type"] = "application/json"
@@ -701,6 +707,130 @@ export class WhatsApp {
     })
   }
 
+  // ── Catalog Management (BM-level) ──
+
+  async listOwnedCatalogs(businessId: string, opts?: { fields?: string[] }): Promise<CatalogListResponse> {
+    const path = appendQuery(`${businessId}/owned_product_catalogs`, { fields: opts?.fields?.join(",") })
+    return this.request<CatalogListResponse>(path, { method: "GET" })
+  }
+
+  async listClientCatalogs(businessId: string, opts?: { fields?: string[] }): Promise<CatalogListResponse> {
+    const path = appendQuery(`${businessId}/client_product_catalogs`, { fields: opts?.fields?.join(",") })
+    return this.request<CatalogListResponse>(path, { method: "GET" })
+  }
+
+  async createCatalog(businessId: string, input: CatalogCreateInput): Promise<{ id: string }> {
+    return this.request<{ id: string }>(`${businessId}/owned_product_catalogs`, { body: input })
+  }
+
+  async getCatalog(catalogId: string, fields?: string[]): Promise<Catalog> {
+    const path = appendQuery(catalogId, { fields: fields?.join(",") })
+    return this.request<Catalog>(path, { method: "GET" })
+  }
+
+  async deleteCatalog(catalogId: string): Promise<{ success: boolean }> {
+    return this.request(catalogId, { method: "DELETE" })
+  }
+
+  // ── Product Management (catalog-level) ──
+
+  async createProduct(catalogId: string, input: ProductCreateInput): Promise<{ id: string }> {
+    validateProductInput(input, this.validate)
+    return this.request<{ id: string }>(`${catalogId}/products`, { body: input })
+  }
+
+  async getProduct(productId: string, fields?: string[]): Promise<Product> {
+    const path = appendQuery(productId, { fields: fields?.join(",") })
+    return this.request<Product>(path, { method: "GET" })
+  }
+
+  async updateProduct(productId: string, patch: ProductUpdateInput): Promise<{ success: boolean }> {
+    validateProductPatch(patch, this.validate)
+    return this.request(productId, { body: patch })
+  }
+
+  async deleteProduct(productId: string): Promise<{ success: boolean }> {
+    return this.request(productId, { method: "DELETE" })
+  }
+
+  async listProducts(catalogId: string, opts?: ProductListOptions): Promise<ProductListResponse> {
+    const path = appendQuery(`${catalogId}/products`, {
+      fields: opts?.fields?.join(","),
+      limit: opts?.limit?.toString(),
+      after: opts?.after,
+      before: opts?.before,
+      filter: opts?.filter ? JSON.stringify(opts.filter) : undefined,
+    })
+    return this.request<ProductListResponse>(path, { method: "GET" })
+  }
+
+  // Meta v25: the legacy `/batch` endpoint with form-urlencoded `requests=<JSON>`
+  // is the shape that worked end-to-end in our smoke runs. The newer documented
+  // `/items_batch` endpoint returned "Can not find required field id" for every
+  // payload variant tested (verified against catalog 2826724194252749 in 2026-04).
+  // Revisit if Meta deprecates `/batch` or fixes `/items_batch`.
+  async batchProducts(
+    catalogId: string,
+    requests: ProductBatchRequest[],
+    opts?: { allowUpsert?: boolean },
+  ): Promise<ProductBatchResponse> {
+    if (requests.length < 1) {
+      throw new ValidationError(`batch must have at least 1 request (got ${requests.length})`, "requests", 1)
+    }
+    if (requests.length > 5000) {
+      throw new ValidationError(`batch can have at most 5000 requests (got ${requests.length})`, "requests", 5000)
+    }
+
+    const body = new URLSearchParams()
+    body.set("requests", JSON.stringify(requests))
+    if (opts?.allowUpsert) body.set("allow_upsert", "true")
+
+    const result = await this.request<ProductBatchResponse>(`${catalogId}/batch`, { body })
+
+    // Meta returns HTTP 200 with no handles when the payload is rejected. Surface
+    // this as an error regardless of whether `validation_status` is populated:
+    // empty/missing `errors` arrays still mean the batch never queued.
+    if (!result.handles?.length) {
+      const rejected = result.validation_status?.length ?? 0
+      const message = rejected > 0
+        ? `batch produced no handles (${rejected} item(s) rejected)`
+        : `batch produced no handles and Meta returned no validation_status (likely transport issue or malformed payload silently dropped)`
+      const details = result.validation_status
+        ? JSON.stringify(result.validation_status)
+        : "no validation_status returned"
+      throw new WhatsAppError({
+        message,
+        code: 0,
+        title: "batch_validation_failed",
+        httpStatus: 200,
+        details,
+        category: "parameter",
+        retryHint: "fix_and_retry",
+      })
+    }
+    return result
+  }
+
+  async getBatchStatus(catalogId: string, handle: string): Promise<ProductBatchStatus> {
+    const path = appendQuery(`${catalogId}/check_batch_request_status`, { handle })
+    const result = await this.request<{ data: ProductBatchStatus[] }>(path, { method: "GET" })
+    if (!result.data || result.data.length === 0) {
+      // Empty data has two real causes: invalid/expired handle (don't retry) and
+      // freshly-minted handle that hasn't propagated (retry after a few seconds).
+      // Since the SDK can't distinguish, emit retry_after so callers backoff
+      // rather than treat it as terminal.
+      throw new WhatsAppError({
+        message: `no batch status returned for handle "${handle}" — if just submitted, retry after a few seconds; persistent emptiness means invalid/expired`,
+        code: 0,
+        title: "empty_batch_status",
+        httpStatus: 200,
+        category: "parameter",
+        retryHint: "retry_after",
+      })
+    }
+    return result.data[0]
+  }
+
   // ── Health Status ──
 
   async getHealthStatus(): Promise<HealthStatusResponse> {
@@ -1076,5 +1206,61 @@ function buildCarouselCardButton(b: CarouselCardButtonInput): any {
       const _exhaustive: never = b
       throw new Error(`unsupported carousel card button type: ${JSON.stringify(_exhaustive)}`)
     }
+  }
+}
+
+// ── Catalog/Product Helpers (private to module) ────────────────────────────
+
+function appendQuery(path: string, params: Record<string, string | undefined>): string {
+  const search = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== "") search.set(k, v)
+  }
+  const qs = search.toString()
+  return qs ? `${path}?${qs}` : path
+}
+
+// `retailer_id`, `url`, and `image_url` are structural: empty would build an
+// unidentifiable item or one Meta will reject as missing required fields.
+// Numeric/format checks are gated by the `validate` flag.
+function validateProductInput(input: ProductCreateInput, extended: boolean): void {
+  if (!input.retailer_id) {
+    throw new ValidationError("product retailer_id is required and cannot be empty", "retailer_id", 0)
+  }
+  if (!input.url) {
+    throw new ValidationError("product url is required and cannot be empty", "url", 0)
+  }
+  if (!input.image_url) {
+    throw new ValidationError("product image_url is required and cannot be empty", "image_url", 0)
+  }
+  if (!extended) return
+
+  if (typeof input.price !== "number" || input.price < 0) {
+    throw new ValidationError(`product price must be a non-negative integer (got ${input.price})`, "price", 0)
+  }
+  if (!input.currency || !/^[A-Z]{3}$/.test(input.currency)) {
+    throw new ValidationError(`product currency must be ISO 4217 (3 uppercase letters), got "${input.currency}"`, "currency", 3)
+  }
+  if (!/^https?:\/\//.test(input.image_url)) {
+    throw new ValidationError(`product image_url must be http(s), got "${input.image_url}"`, "image_url", 0)
+  }
+  if (!/^https?:\/\//.test(input.url)) {
+    throw new ValidationError(`product url must be http(s), got "${input.url}"`, "url", 0)
+  }
+}
+
+function validateProductPatch(patch: ProductUpdateInput, extended: boolean): void {
+  if (!extended) return
+  if (patch.price !== undefined && (typeof patch.price !== "number" || patch.price < 0)) {
+    throw new ValidationError(`product price must be a non-negative integer (got ${patch.price})`, "price", 0)
+  }
+  if (patch.currency !== undefined && !/^[A-Z]{3}$/.test(patch.currency)) {
+    throw new ValidationError(`product currency must be ISO 4217 (3 uppercase letters), got "${patch.currency}"`, "currency", 3)
+  }
+  if (patch.image_url !== undefined && !/^https?:\/\//.test(patch.image_url)) {
+    throw new ValidationError(`product image_url must be http(s), got "${patch.image_url}"`, "image_url", 0)
+  }
+  if (patch.url !== undefined && !/^https?:\/\//.test(patch.url)) {
+    throw new ValidationError(`product url must be http(s), got "${patch.url}"`, "url", 0)
   }
 }

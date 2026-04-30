@@ -403,6 +403,154 @@ export interface CommerceSettings {
   id?: string
 }
 
+// ── Catalog & Product Management ─────────────────────────────────────────
+
+export type CatalogVertical =
+  | "commerce"
+  | "destinations"
+  | "flights"
+  | "home_listings"
+  | "hotels"
+  | "media_title"
+  | "offline_commerce"
+  | "ticketed_experiences"
+  | "transactable_items"
+  | "vehicles"
+  | (string & {})
+
+export interface Catalog {
+  id: string
+  name: string
+  vertical?: CatalogVertical
+  product_count?: number
+}
+
+export interface CatalogCreateInput {
+  name: string
+  vertical?: CatalogVertical
+}
+
+export interface CatalogListResponse {
+  data: Catalog[]
+  paging?: { cursors?: { before?: string; after?: string }; next?: string; previous?: string }
+}
+
+export type ItemAvailability =
+  | "in stock"
+  | "out of stock"
+  | "preorder"
+  | "available for order"
+  | "discontinued"
+  | (string & {})
+
+export type ItemCondition = "new" | "refurbished" | "used" | "cpo" | (string & {})
+
+// `price` and `sale_price` are integers in the smallest currency unit
+// (e.g. 990 for R$ 9,90 with BRL = 990 cents). The Meta GET response, however,
+// returns `price` as a localized formatted STRING (e.g. "R$14,90") — see Product below.
+export interface ProductCreateInput {
+  retailer_id: string
+  name: string
+  description: string
+  image_url: string
+  price: number
+  currency: string
+  url: string                                          // required by Meta
+  availability?: ItemAvailability
+  condition?: ItemCondition
+  brand?: string
+  category?: string
+  additional_image_urls?: string[]
+  gtin?: string
+  mpn?: string
+  sale_price?: number
+  sale_price_start_date?: string
+  sale_price_end_date?: string
+}
+
+// `retailer_id` is the path key (immutable) and is not patchable through this endpoint.
+export type ProductUpdateInput = Partial<Omit<ProductCreateInput, "retailer_id">>
+
+// Distinct from `ProductCreateInput`: Meta's GET returns `price` as a formatted string
+// like "R$14,90". Do not perform arithmetic on `Product.price` — fetch the raw integer
+// via the `price_amount` field if needed (use `getProduct(id, ["price_amount"])`).
+export interface Product {
+  id: string
+  retailer_id: string
+  name?: string
+  description?: string
+  image_url?: string
+  price?: string
+  currency?: string
+  url?: string
+  availability?: ItemAvailability
+  condition?: ItemCondition
+  brand?: string
+  category?: string
+  additional_image_urls?: string[]
+  gtin?: string
+  mpn?: string
+  sale_price?: string
+  sale_price_start_date?: string
+  sale_price_end_date?: string
+  retailer_product_group_id?: string
+  visibility?: "published" | "staging"
+  review_status?: "pending" | "approved" | "rejected" | "outdated"
+}
+
+export interface ProductListOptions {
+  fields?: string[]
+  limit?: number
+  after?: string
+  before?: string
+  filter?: Record<string, unknown>
+}
+
+export interface ProductListResponse {
+  data: Product[]
+  paging?: { cursors?: { before?: string; after?: string }; next?: string; previous?: string }
+}
+
+export type ProductBatchMethod = "CREATE" | "UPDATE" | "DELETE"
+
+// Discriminated by `method`: CREATE requires full data, UPDATE takes a partial,
+// DELETE takes nothing besides the retailer_id.
+export type ProductBatchRequest =
+  | { method: "CREATE"; retailer_id: string; data: ProductCreateInput }
+  | { method: "UPDATE"; retailer_id: string; data: ProductUpdateInput }
+  | { method: "DELETE"; retailer_id: string }
+
+export interface ProductBatchResponse {
+  handles?: string[]
+  // `errors` is optional: Meta has been observed returning entries with only a
+  // `retailer_id` and no `errors` key (or with an empty array). Treat absence of
+  // `handles` as the authoritative failure signal — see `batchProducts`.
+  validation_status?: Array<{
+    retailer_id?: string
+    errors?: Array<{ message: string }>
+  }>
+}
+
+// Meta has been observed to return "started" for queued-but-running batches even
+// though the public docs list "queued" / "in_progress". Both surface here so
+// `switch`-exhaustiveness on `status` keeps working for new variants.
+export type ProductBatchStatusValue =
+  | "queued"
+  | "started"
+  | "in_progress"
+  | "finished"
+  | "errored"
+  | (string & {})
+
+export interface ProductBatchStatus {
+  handle: string
+  status: ProductBatchStatusValue
+  errors?: Array<{ message: string; retailer_id?: string; line?: number }>
+  warnings?: Array<{ message: string; id?: string; line?: number }>
+  errors_total_count?: number
+  ids_of_invalid_requests?: number[]
+}
+
 // ── Health Status ────────────────────────────────────────────────────────
 
 export interface HealthStatusEntity {
