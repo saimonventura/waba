@@ -522,9 +522,12 @@ export type ProductBatchRequest =
 
 export interface ProductBatchResponse {
   handles?: string[]
+  // `errors` is optional: Meta has been observed returning entries with only a
+  // `retailer_id` and no `errors` key (or with an empty array). Treat absence of
+  // `handles` as the authoritative failure signal — see `batchProducts`.
   validation_status?: Array<{
     retailer_id?: string
-    errors: Array<{ message: string }>
+    errors?: Array<{ message: string }>
   }>
 }
 

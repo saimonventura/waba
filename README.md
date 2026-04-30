@@ -1,6 +1,6 @@
 # @saimonventura/waba
 
-[![npm](https://img.shields.io/npm/v/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![downloads](https://img.shields.io/npm/dm/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![license](https://img.shields.io/npm/l/@saimonventura/waba)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/) [![tests](https://img.shields.io/badge/tests-251%20passing-brightgreen)]() [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen)]() [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![npm](https://img.shields.io/npm/v/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![downloads](https://img.shields.io/npm/dm/@saimonventura/waba)](https://www.npmjs.com/package/@saimonventura/waba) [![license](https://img.shields.io/npm/l/@saimonventura/waba)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/) [![tests](https://img.shields.io/badge/tests-260%20passing-brightgreen)]() [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen)]() [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 **The complete WhatsApp Cloud API SDK for TypeScript.** Zero dependencies. 95 methods. Every API surface covered.
 

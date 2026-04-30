@@ -330,6 +330,21 @@ describe("Catalog & Product Management", () => {
     })).rejects.toThrow(/retailer_id/)
   })
 
+  it("should reject createProduct with empty image_url (always — structural)", async () => {
+    mockFetch({ id: PRODUCT_ID })
+    const client = createClient()
+
+    await expect(client.createProduct(CATALOG_ID, {
+      retailer_id: "sku-001",
+      name: "X",
+      description: "x",
+      image_url: "",
+      price: 100,
+      currency: "BRL",
+      url: "https://shop.example.com",
+    })).rejects.toThrow(/image_url/)
+  })
+
   it("should reject createProduct with empty url (always — structural, Meta requires it)", async () => {
     mockFetch({ id: PRODUCT_ID })
     const client = createClient()
@@ -430,6 +445,13 @@ describe("Catalog & Product Management", () => {
     await expect(client.updateProduct(PRODUCT_ID, { image_url: "ftp://x.com/i.jpg" })).rejects.toThrow(/image_url/)
   })
 
+  it("should reject updateProduct with non-http url (validate: true)", async () => {
+    mockFetch({ success: true })
+    const client = new WhatsApp({ phoneNumberId: PHONE_ID, accessToken: TOKEN, wabaId: WABA_ID, validate: true })
+
+    await expect(client.updateProduct(PRODUCT_ID, { url: "ftp://x.com/page" })).rejects.toThrow(/url/)
+  })
+
   it("should pass updateProduct with name only (validate: true, no-op for unrelated fields)", async () => {
     mockFetch({ success: true })
     const client = new WhatsApp({ phoneNumberId: PHONE_ID, accessToken: TOKEN, wabaId: WABA_ID, validate: true })
@@ -455,7 +477,7 @@ describe("Catalog & Product Management", () => {
     ])).rejects.toBeInstanceOf(WhatsAppError)
   })
 
-  it("should NOT throw when batch returns validation_status without errors (treat as success)", async () => {
+  it("should NOT throw when batch returns handles even alongside empty validation_status", async () => {
     const response = { handles: ["h1"], validation_status: [{ retailer_id: "sku-001", errors: [] }] }
     mockFetch(response)
     const client = createClient()
@@ -464,6 +486,54 @@ describe("Catalog & Product Management", () => {
       { method: "DELETE", retailer_id: "sku-001" },
     ])
     expect(result).toEqual(response)
+  })
+
+  it("should throw WhatsAppError when batch returns no handles even without errors populated", async () => {
+    // Meta has been observed to return validation_status entries with no errors key
+    // or an empty errors array — absence of handles is the authoritative failure signal.
+    mockFetch({ validation_status: [{ retailer_id: "sku-001" }] })
+    const client = createClient()
+
+    await expect(client.batchProducts(CATALOG_ID, [
+      { method: "DELETE", retailer_id: "sku-001" },
+    ])).rejects.toBeInstanceOf(WhatsAppError)
+  })
+
+  it("should throw WhatsAppError when batch returns empty body (no handles, no validation_status)", async () => {
+    mockFetch({})
+    const client = createClient()
+
+    await expect(client.batchProducts(CATALOG_ID, [
+      { method: "DELETE", retailer_id: "sku-001" },
+    ])).rejects.toBeInstanceOf(WhatsAppError)
+  })
+
+  it("should classify batch_validation_failed as parameter/fix_and_retry", async () => {
+    mockFetch({ validation_status: [{ retailer_id: "sku-001", errors: [{ message: "bad image" }] }] })
+    const client = createClient()
+
+    const promise = client.batchProducts(CATALOG_ID, [
+      { method: "DELETE", retailer_id: "sku-001" },
+    ])
+
+    await promise.catch((e: WhatsAppError) => {
+      expect(e.title).toBe("batch_validation_failed")
+      expect(e.category).toBe("parameter")
+      expect(e.retryHint).toBe("fix_and_retry")
+    })
+  })
+
+  it("should classify empty_batch_status as parameter/do_not_retry", async () => {
+    mockFetch({ data: [] })
+    const client = createClient()
+
+    const promise = client.getBatchStatus(CATALOG_ID, "stale-handle")
+
+    await promise.catch((e: WhatsAppError) => {
+      expect(e.title).toBe("empty_batch_status")
+      expect(e.category).toBe("parameter")
+      expect(e.retryHint).toBe("do_not_retry")
+    })
   })
 
   // ── getBatchStatus: empty data handling ──
@@ -493,6 +563,41 @@ describe("Catalog & Product Management", () => {
     ])
 
     expect(parseFetchHeaders(mock)["Content-Type"]).toBe("application/x-www-form-urlencoded")
+  })
+
+  // ── listProducts paging + filter coverage ──
+
+  it("should support `before` cursor in listProducts paging", async () => {
+    const mock = mockFetch({ data: [], paging: { cursors: { before: "older" } } })
+    const client = createClient()
+
+    await client.listProducts(CATALOG_ID, { before: "older-cursor" })
+
+    expect(parseFetchUrl(mock)).toContain("before=older-cursor")
+  })
+
+  it("should JSON-encode filter param in listProducts", async () => {
+    const mock = mockFetch({ data: [] })
+    const client = createClient()
+
+    await client.listProducts(CATALOG_ID, { filter: { availability: { eq: "in stock" } } })
+
+    const url = parseFetchUrl(mock)
+    expect(url).toContain("filter=")
+    const params = new URL(url).searchParams
+    const filter = params.get("filter")
+    expect(filter).not.toBeNull()
+    expect(JSON.parse(filter!)).toEqual({ availability: { eq: "in stock" } })
+  })
+
+  it("should omit fields query param when fields array is empty", async () => {
+    const mock = mockFetch({ data: [] })
+    const client = createClient()
+
+    await client.listOwnedCatalogs(BM_ID, { fields: [] })
+
+    const url = parseFetchUrl(mock)
+    expect(url).not.toContain("fields=")
   })
 
   it("should NOT set allow_upsert in batch body when option is omitted", async () => {

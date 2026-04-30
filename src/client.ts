@@ -765,10 +765,10 @@ export class WhatsApp {
   }
 
   // Meta v25: the legacy `/batch` endpoint with form-urlencoded `requests=<JSON>`
-  // is the only working shape. The newer documented `/items_batch` endpoint
-  // returns "Can not find required field id" for every payload variant tested
-  // (verified end-to-end against catalog 2826724194252749 in 2026-04). Revisit
-  // when Meta deprecates `/batch` or fixes `/items_batch`.
+  // is the shape that worked end-to-end in our smoke runs. The newer documented
+  // `/items_batch` endpoint returned "Can not find required field id" for every
+  // payload variant tested (verified against catalog 2826724194252749 in 2026-04).
+  // Revisit if Meta deprecates `/batch` or fixes `/items_batch`.
   async batchProducts(
     catalogId: string,
     requests: ProductBatchRequest[],
@@ -787,17 +787,22 @@ export class WhatsApp {
 
     const result = await this.request<ProductBatchResponse>(`${catalogId}/batch`, { body })
 
-    // Meta returns HTTP 200 with `validation_status` when the payload itself is
-    // rejected (no `handles` produced). Surface this as an error so callers don't
-    // silently believe the batch was queued.
-    if (!result.handles && result.validation_status?.some(v => v.errors?.length)) {
-      const detail = JSON.stringify(result.validation_status)
+    // Meta returns HTTP 200 with no handles when the payload is rejected. Surface
+    // this as an error regardless of whether `validation_status` is populated:
+    // empty/missing `errors` arrays still mean the batch never queued.
+    if (!result.handles?.length) {
+      const rejected = result.validation_status?.length ?? 0
+      const detail = result.validation_status
+        ? JSON.stringify(result.validation_status)
+        : "no validation_status returned"
       throw new WhatsAppError({
-        message: `batch validation failed: ${result.validation_status.length} item(s) rejected`,
+        message: `batch produced no handles (${rejected} item(s) rejected)`,
         code: 0,
         title: "batch_validation_failed",
         httpStatus: 200,
         details: detail,
+        category: "parameter",
+        retryHint: "fix_and_retry",
       })
     }
     return result
@@ -812,6 +817,8 @@ export class WhatsApp {
         code: 0,
         title: "empty_batch_status",
         httpStatus: 200,
+        category: "parameter",
+        retryHint: "do_not_retry",
       })
     }
     return result.data[0]
@@ -1206,15 +1213,18 @@ function appendQuery(path: string, params: Record<string, string | undefined>): 
   return qs ? `${path}?${qs}` : path
 }
 
-// `retailer_id` and `url` are structural: empty would build an unidentifiable
-// item or one Meta will reject as missing the destination URL. Numeric/format
-// checks are gated by the `validate` flag.
+// `retailer_id`, `url`, and `image_url` are structural: empty would build an
+// unidentifiable item or one Meta will reject as missing required fields.
+// Numeric/format checks are gated by the `validate` flag.
 function validateProductInput(input: ProductCreateInput, extended: boolean): void {
   if (!input.retailer_id) {
     throw new ValidationError("product retailer_id is required and cannot be empty", "retailer_id", 0)
   }
   if (!input.url) {
     throw new ValidationError("product url is required and cannot be empty", "url", 0)
+  }
+  if (!input.image_url) {
+    throw new ValidationError("product image_url is required and cannot be empty", "image_url", 0)
   }
   if (!extended) return
 
@@ -1224,10 +1234,10 @@ function validateProductInput(input: ProductCreateInput, extended: boolean): voi
   if (!input.currency || !/^[A-Z]{3}$/.test(input.currency)) {
     throw new ValidationError(`product currency must be ISO 4217 (3 uppercase letters), got "${input.currency}"`, "currency", 3)
   }
-  if (input.image_url && !/^https?:\/\//.test(input.image_url)) {
+  if (!/^https?:\/\//.test(input.image_url)) {
     throw new ValidationError(`product image_url must be http(s), got "${input.image_url}"`, "image_url", 0)
   }
-  if (input.url && !/^https?:\/\//.test(input.url)) {
+  if (!/^https?:\/\//.test(input.url)) {
     throw new ValidationError(`product url must be http(s), got "${input.url}"`, "url", 0)
   }
 }
