@@ -449,7 +449,7 @@ describe("Catalog & Product Management", () => {
     mockFetch({ success: true })
     const client = new WhatsApp({ phoneNumberId: PHONE_ID, accessToken: TOKEN, wabaId: WABA_ID, validate: true })
 
-    await expect(client.updateProduct(PRODUCT_ID, { url: "ftp://x.com/page" })).rejects.toThrow(/url/)
+    await expect(client.updateProduct(PRODUCT_ID, { url: "ftp://x.com/page" })).rejects.toThrow(/^product url must be http/)
   })
 
   it("should pass updateProduct with name only (validate: true, no-op for unrelated fields)", async () => {
@@ -512,27 +512,23 @@ describe("Catalog & Product Management", () => {
     mockFetch({ validation_status: [{ retailer_id: "sku-001", errors: [{ message: "bad image" }] }] })
     const client = createClient()
 
-    const promise = client.batchProducts(CATALOG_ID, [
+    await expect(client.batchProducts(CATALOG_ID, [
       { method: "DELETE", retailer_id: "sku-001" },
-    ])
-
-    await promise.catch((e: WhatsAppError) => {
-      expect(e.title).toBe("batch_validation_failed")
-      expect(e.category).toBe("parameter")
-      expect(e.retryHint).toBe("fix_and_retry")
+    ])).rejects.toMatchObject({
+      title: "batch_validation_failed",
+      category: "parameter",
+      retryHint: "fix_and_retry",
     })
   })
 
-  it("should classify empty_batch_status as parameter/do_not_retry", async () => {
+  it("should classify empty_batch_status as parameter/retry_after (handle may be propagating)", async () => {
     mockFetch({ data: [] })
     const client = createClient()
 
-    const promise = client.getBatchStatus(CATALOG_ID, "stale-handle")
-
-    await promise.catch((e: WhatsAppError) => {
-      expect(e.title).toBe("empty_batch_status")
-      expect(e.category).toBe("parameter")
-      expect(e.retryHint).toBe("do_not_retry")
+    await expect(client.getBatchStatus(CATALOG_ID, "stale-handle")).rejects.toMatchObject({
+      title: "empty_batch_status",
+      category: "parameter",
+      retryHint: "retry_after",
     })
   })
 
@@ -590,7 +586,7 @@ describe("Catalog & Product Management", () => {
     expect(JSON.parse(filter!)).toEqual({ availability: { eq: "in stock" } })
   })
 
-  it("should omit fields query param when fields array is empty", async () => {
+  it("should omit fields query param when fields array is empty (listOwnedCatalogs)", async () => {
     const mock = mockFetch({ data: [] })
     const client = createClient()
 
@@ -598,6 +594,26 @@ describe("Catalog & Product Management", () => {
 
     const url = parseFetchUrl(mock)
     expect(url).not.toContain("fields=")
+  })
+
+  it("should omit fields query param when fields array is empty (listProducts)", async () => {
+    const mock = mockFetch({ data: [] })
+    const client = createClient()
+
+    await client.listProducts(CATALOG_ID, { fields: [] })
+
+    const url = parseFetchUrl(mock)
+    expect(url).not.toContain("fields=")
+  })
+
+  it("should URL-encode batch handle reserved chars in getBatchStatus", async () => {
+    const mock = mockFetch({ data: [{ handle: "h", status: "finished" }] })
+    const client = createClient()
+
+    await client.getBatchStatus(CATALOG_ID, "abc+def/ghi=jkl&mno")
+
+    const url = parseFetchUrl(mock)
+    expect(url).toContain("handle=abc%2Bdef%2Fghi%3Djkl%26mno")
   })
 
   it("should NOT set allow_upsert in batch body when option is omitted", async () => {

@@ -792,15 +792,18 @@ export class WhatsApp {
     // empty/missing `errors` arrays still mean the batch never queued.
     if (!result.handles?.length) {
       const rejected = result.validation_status?.length ?? 0
-      const detail = result.validation_status
+      const message = rejected > 0
+        ? `batch produced no handles (${rejected} item(s) rejected)`
+        : `batch produced no handles and Meta returned no validation_status (likely transport issue or malformed payload silently dropped)`
+      const details = result.validation_status
         ? JSON.stringify(result.validation_status)
         : "no validation_status returned"
       throw new WhatsAppError({
-        message: `batch produced no handles (${rejected} item(s) rejected)`,
+        message,
         code: 0,
         title: "batch_validation_failed",
         httpStatus: 200,
-        details: detail,
+        details,
         category: "parameter",
         retryHint: "fix_and_retry",
       })
@@ -812,13 +815,17 @@ export class WhatsApp {
     const path = appendQuery(`${catalogId}/check_batch_request_status`, { handle })
     const result = await this.request<{ data: ProductBatchStatus[] }>(path, { method: "GET" })
     if (!result.data || result.data.length === 0) {
+      // Empty data has two real causes: invalid/expired handle (don't retry) and
+      // freshly-minted handle that hasn't propagated (retry after a few seconds).
+      // Since the SDK can't distinguish, emit retry_after so callers backoff
+      // rather than treat it as terminal.
       throw new WhatsAppError({
-        message: `no batch status returned for handle "${handle}" (handle may be invalid or expired)`,
+        message: `no batch status returned for handle "${handle}" — if just submitted, retry after a few seconds; persistent emptiness means invalid/expired`,
         code: 0,
         title: "empty_batch_status",
         httpStatus: 200,
         category: "parameter",
-        retryHint: "do_not_retry",
+        retryHint: "retry_after",
       })
     }
     return result.data[0]
