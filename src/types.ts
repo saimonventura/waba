@@ -22,11 +22,13 @@ export type MediaSource = { url: string } | { id: string };
 export interface SendMessageOptions {
   replyTo?: string;
   previewUrl?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface InteractiveOptions {
   header?: string;
   footer?: string;
+  signal?: AbortSignal;
 }
 
 // ── Interactive Components ──────────────────────────────────────────────────
@@ -160,6 +162,7 @@ export interface SavedAddress {
 export interface AddressMessageOptions {
   header?: string;
   footer?: string;
+  signal?: AbortSignal;
   country: string;
   values?: AddressValues;
   savedAddresses?: SavedAddress[];
@@ -221,6 +224,7 @@ export interface OrderDetailsAction {
 export interface OrderDetailsOptions {
   header?: string
   footer?: string
+  signal?: AbortSignal
 }
 
 export interface OrderStatusAction {
@@ -234,6 +238,7 @@ export interface OrderStatusAction {
 export interface OrderStatusOptions {
   header?: string
   footer?: string
+  signal?: AbortSignal
 }
 
 // ── Flow ──────────────────────────────────────────────────────────────
