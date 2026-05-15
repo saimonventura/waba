@@ -193,6 +193,28 @@ await wa.sendOrderStatus(to, "Payment confirmed!", {
 })
 ```
 
+### Catalog Order Webhooks
+
+```ts
+import {
+  parseWebhook,
+  parseCatalogOrderEvent,
+  productRetailerId,
+  toWhatsAppOrderStatus,
+} from "@saimonventura/waba"
+
+const events = parseWebhook(req.body)
+for (const event of events) {
+  const order = parseCatalogOrderEvent(event)
+  if (!order) continue
+
+  // order.catalogId, order.productItems, order.from, order.messageId
+}
+
+const retailerId = productRetailerId(529) // "product:529"
+const wabaStatus = toWhatsAppOrderStatus("out_for_delivery") // "shipped"
+```
+
 ## Templates
 
 ```ts
@@ -493,7 +515,7 @@ try {
 
 ## TypeScript
 
-All 49 interfaces are exported:
+Types and commerce helpers are exported:
 
 ```ts
 import type {
@@ -505,6 +527,7 @@ import type {
   BusinessProfile, PhoneInfo, CommerceSettings,
   HealthStatusResponse, PhoneNumberEntry, QRCode, FlowInfo,
   WebhookEvent, InboundMessage, StatusUpdate, BroadcastResult,
+  CatalogOrderWebhook, WhatsAppOrderStatusValue,
 } from "@saimonventura/waba"
 ```
 
@@ -525,6 +548,7 @@ import type {
 | **Commerce** | `getCommerceSettings` `updateCommerceSettings` |
 | **Catalog** | `listOwnedCatalogs` `listClientCatalogs` `createCatalog` `getCatalog` `deleteCatalog` |
 | **Products** | `createProduct` `getProduct` `updateProduct` `deleteProduct` `listProducts` `batchProducts` `getBatchStatus` |
+| **Commerce Helpers** | `parseCatalogOrderEvent` `parseCatalogOrderMessage` `isCatalogOrderEvent` `isOrderMessage` `productRetailerId` `variantRetailerId` `parseRetailerId` `toWhatsAppOrderStatus` `canSendOrderStatus` |
 | **Health** | `getHealthStatus` |
 | **Phone Numbers** | `listPhoneNumbers` |
 | **QR Codes** | `createQR` `listQRCodes` `updateQR` `deleteQR` |

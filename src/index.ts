@@ -7,4 +7,15 @@ export type { ErrorCategory, RetryHint } from "./error-codes.js"
 export { ValidationError, LIMITS, validateText, validateButtons, validateList, validateCTA } from "./validate.js"
 export { handleFlowEndpoint } from "./flows.js"
 export type { FlowDataRequest, FlowDecryptedData, FlowResponse, FlowEndpointConfig } from "./flows.js"
+export {
+  canSendOrderStatus,
+  isCatalogOrderEvent,
+  isOrderMessage,
+  parseCatalogOrderEvent,
+  parseCatalogOrderMessage,
+  parseRetailerId,
+  productRetailerId,
+  toWhatsAppOrderStatus,
+  variantRetailerId,
+} from "./commerce.js"
 export * from "./types.js"
