@@ -290,6 +290,26 @@ describe("Order Status", () => {
     expect(body.interactive.action.parameters.order.description).toBeUndefined()
   })
 
+  it("should send order status shipped and canceled", async () => {
+    const mock = mockFetch(SUCCESS)
+    const client = createClient()
+
+    await client.sendOrderStatus("5511999999999", "Saiu para entrega", {
+      referenceId: "order_ship",
+      order: { status: "shipped" },
+    })
+
+    await client.sendOrderStatus("5511999999999", "Pedido cancelado", {
+      referenceId: "order_cancel",
+      order: { status: "canceled" },
+    })
+
+    const shippedBody = JSON.parse(mock.mock.calls[0][1].body)
+    const canceledBody = JSON.parse(mock.mock.calls[1][1].body)
+    expect(shippedBody.interactive.action.parameters.order.status).toBe("shipped")
+    expect(canceledBody.interactive.action.parameters.order.status).toBe("canceled")
+  })
+
   it("should send order status with header and footer", async () => {
     const mock = mockFetch(SUCCESS)
     const client = createClient()

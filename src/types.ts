@@ -76,6 +76,8 @@ export interface Order {
   product_items: OrderProductItem[];
 }
 
+export type RetailerIdKind = "product" | "variant"
+
 // ── Location ────────────────────────────────────────────────────────────────
 
 export interface LocationData {
@@ -181,8 +183,19 @@ export interface OrderDetailItem {
   importer_address?: string
 }
 
+export type WhatsAppOrderStatusValue =
+  | "pending"
+  | "processing"
+  | "partially-shipped"
+  | "shipped"
+  | "completed"
+  | "canceled"
+  | (string & {})
+
+export type OrderStatusValue = WhatsAppOrderStatusValue | "failed"
+
 export interface OrderDetailOrder {
-  status: "pending" | "processing" | "completed" | "failed" | string
+  status: OrderStatusValue
   catalog_id?: string
   items: OrderDetailItem[]
   subtotal: OrderAmount
@@ -209,8 +222,6 @@ export interface OrderDetailsOptions {
   header?: string
   footer?: string
 }
-
-export type OrderStatusValue = "pending" | "processing" | "completed" | "failed" | string
 
 export interface OrderStatusAction {
   referenceId: string
@@ -716,6 +727,20 @@ export type WebhookEvent =
     }
   | { type: "status"; status: StatusUpdate; metadata: Metadata }
   | { type: "error"; errors: WebhookError[]; metadata: Metadata };
+
+export interface CatalogOrderWebhook {
+  messageId: string
+  from: string
+  waId?: string
+  phoneNumberId?: string
+  displayPhoneNumber?: string
+  contactName?: string
+  timestamp: string
+  catalogId: string
+  text?: string
+  productItems: OrderProductItem[]
+  raw: Extract<InboundMessage, { type: "order" }>
+}
 
 // ── Webhook: Raw Payload ────────────────────────────────────────────────────
 
