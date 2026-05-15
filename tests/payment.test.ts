@@ -323,4 +323,17 @@ describe("Order Status", () => {
     expect(body.interactive.header).toEqual({ type: "text", text: "Status" })
     expect(body.interactive.footer).toEqual({ text: "Obrigado!" })
   })
+
+  it("should pass abort signal to order status request", async () => {
+    const mock = mockFetch(SUCCESS)
+    const client = createClient()
+    const controller = new AbortController()
+
+    await client.sendOrderStatus("5511999999999", "Pedido confirmado", {
+      referenceId: "order_signal",
+      order: { status: "completed" },
+    }, { signal: controller.signal })
+
+    expect(mock.mock.calls[0][1].signal).toBe(controller.signal)
+  })
 })

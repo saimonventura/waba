@@ -43,7 +43,7 @@ export class WhatsApp {
     return `${GRAPH_URL}/${this.apiVersion}`
   }
 
-  private async request<T = any>(path: string, options?: { method?: string, body?: any, headers?: Record<string, string> }): Promise<T> {
+  private async request<T = any>(path: string, options?: { method?: string, body?: any, headers?: Record<string, string>, signal?: AbortSignal }): Promise<T> {
     const url = `${this.baseUrl}/${path}`
     const method = options?.method || "POST"
     const headers: Record<string, string> = {
@@ -51,7 +51,7 @@ export class WhatsApp {
       ...options?.headers,
     }
 
-    const fetchOptions: RequestInit = { method, headers }
+    const fetchOptions: RequestInit = { method, headers, signal: options?.signal }
 
     if (options?.body !== undefined) {
       if (options.body instanceof FormData) {
@@ -100,7 +100,7 @@ export class WhatsApp {
       body.context = { message_id: options.replyTo }
     }
 
-    return this.request<SendMessageResult>(`${this.phoneNumberId}/messages`, { body })
+    return this.request<SendMessageResult>(`${this.phoneNumberId}/messages`, { body, signal: options?.signal })
   }
 
   // ── Messaging: Text ──
@@ -204,7 +204,7 @@ export class WhatsApp {
     }
     if (options?.header) interactive.header = { type: "text", text: options.header }
     if (options?.footer) interactive.footer = { text: options.footer }
-    return this.sendMessage(to, "interactive", { interactive })
+    return this.sendMessage(to, "interactive", { interactive }, { signal: options?.signal })
   }
 
   // ── Interactive: List ──
@@ -221,7 +221,7 @@ export class WhatsApp {
     }
     if (options?.header) interactive.header = { type: "text", text: options.header }
     if (options?.footer) interactive.footer = { text: options.footer }
-    return this.sendMessage(to, "interactive", { interactive })
+    return this.sendMessage(to, "interactive", { interactive }, { signal: options?.signal })
   }
 
   // ── Interactive: CTA URL ──
@@ -241,7 +241,7 @@ export class WhatsApp {
     }
     if (options?.header) interactive.header = { type: "text", text: options.header }
     if (options?.footer) interactive.footer = { text: options.footer }
-    return this.sendMessage(to, "interactive", { interactive })
+    return this.sendMessage(to, "interactive", { interactive }, { signal: options?.signal })
   }
 
   // ── Interactive: Product ──
@@ -276,7 +276,7 @@ export class WhatsApp {
 
   // ── Interactive: Catalog Message ──
 
-  async sendCatalog(to: string, body: string, options?: { thumbnailProductId?: string; footer?: string }): Promise<SendMessageResult> {
+  async sendCatalog(to: string, body: string, options?: { thumbnailProductId?: string; footer?: string; signal?: AbortSignal }): Promise<SendMessageResult> {
     const interactive: any = {
       type: "catalog_message",
       body: { text: body },
@@ -288,7 +288,7 @@ export class WhatsApp {
       interactive.action.parameters = { thumbnail_product_retailer_id: options.thumbnailProductId }
     }
     if (options?.footer) interactive.footer = { text: options.footer }
-    return this.sendMessage(to, "interactive", { interactive })
+    return this.sendMessage(to, "interactive", { interactive }, { signal: options?.signal })
   }
 
   // ── Interactive: Location Request ──
@@ -318,7 +318,7 @@ export class WhatsApp {
     if (options.savedAddresses) interactive.action.parameters.saved_addresses = options.savedAddresses
     if (options.header) interactive.header = { type: "text", text: options.header }
     if (options.footer) interactive.footer = { text: options.footer }
-    return this.sendMessage(to, "interactive", { interactive })
+    return this.sendMessage(to, "interactive", { interactive }, { signal: options?.signal })
   }
 
   // ── Interactive: Flow ──
@@ -347,7 +347,7 @@ export class WhatsApp {
     }
     if (options?.header) interactive.header = { type: "text", text: options.header }
     if (options?.footer) interactive.footer = { text: options.footer }
-    return this.sendMessage(to, "interactive", { interactive })
+    return this.sendMessage(to, "interactive", { interactive }, { signal: options?.signal })
   }
 
   // ── Interactive: Voice Call ──
@@ -363,7 +363,7 @@ export class WhatsApp {
     }
     if (options?.header) interactive.header = { type: "text", text: options.header }
     if (options?.footer) interactive.footer = { text: options.footer }
-    return this.sendMessage(to, "interactive", { interactive })
+    return this.sendMessage(to, "interactive", { interactive }, { signal: options?.signal })
   }
 
   // ── Interactive: Order Details (Payment) ──
@@ -396,7 +396,7 @@ export class WhatsApp {
     }
     if (options?.header) interactive.header = { type: "text", text: options.header }
     if (options?.footer) interactive.footer = { text: options.footer }
-    return this.sendMessage(to, "interactive", { interactive })
+    return this.sendMessage(to, "interactive", { interactive }, { signal: options?.signal })
   }
 
   // ── Interactive: Order Status ──
@@ -418,7 +418,7 @@ export class WhatsApp {
     }
     if (options?.header) interactive.header = { type: "text", text: options.header }
     if (options?.footer) interactive.footer = { text: options.footer }
-    return this.sendMessage(to, "interactive", { interactive })
+    return this.sendMessage(to, "interactive", { interactive }, { signal: options?.signal })
   }
 
   // ── Typing Indicator ──
